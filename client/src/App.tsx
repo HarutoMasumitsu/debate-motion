@@ -4,36 +4,63 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { AuthProvider } from "./contexts/AuthContext";
+import AuthGuard from "./components/AuthGuard";
 import Home from "./pages/Home";
-
+import SearchPage from "./pages/SearchPage";
+import CategoriesPage from "./pages/CategoriesPage";
+import CategoryDetailPage from "./pages/CategoryDetailPage";
+import ArticleDetailPage from "./pages/ArticleDetailPage";
+import LoginPage from "./pages/LoginPage";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import ArticleEditor from "./pages/admin/ArticleEditor";
 
 function Router() {
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
+      <Route path="/" component={Home} />
+      <Route path="/search" component={SearchPage} />
+      <Route path="/categories" component={CategoriesPage} />
+      <Route path="/categories/:slug" component={CategoryDetailPage} />
+      <Route path="/articles/:slug" component={ArticleDetailPage} />
+      <Route path="/login" component={LoginPage} />
+      <Route path="/admin">
+        {() => (
+          <AuthGuard>
+            <AdminDashboard />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/admin/editor">
+        {() => (
+          <AuthGuard>
+            <ArticleEditor />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/admin/editor/:id">
+        {() => (
+          <AuthGuard>
+            <ArticleEditor />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
-
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
+      <ThemeProvider defaultTheme="light">
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );
