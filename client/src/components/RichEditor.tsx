@@ -1,16 +1,15 @@
 /**
  * RichEditor.tsx
  * Notionライクなインライン編集エディタ
- * デザイン: Warm Academic — クリーム色ベース、ティールグリーンアクセント
  *
- * トグル: ReactNodeViewRenderer でカスタムUIを持つブロックノードとして実装
- * - ">" + スペース で発動
- * - ▶ アイコンクリックで開閉
- * - タイトルはインライン編集可能
- * - 開いているときコンテンツを編集可能
+ * 【重要な設計方針】
+ * - RichEditor内部でMarkdown文字列を独自stateとして管理する
+ * - 親コンポーネントとの同期は onChangeRef.current(md) で行う
+ * - 親から渡される value は初期値としてのみ使用し、以降は内部stateが真実の情報源
+ * - これにより、親のsetState → useEffect → setContent の無限ループを完全に防ぐ
  */
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   useEditor,
   EditorContent,
@@ -20,6 +19,7 @@ import {
   NodeViewContent,
   ReactNodeViewRenderer,
   mergeAttributes,
+  InputRule,
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -46,7 +46,7 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: {
   node: any;
   updateAttributes: (attrs: Record<string, any>) => void;
   editor: any;
-  getPos: () => number;
+  getPos: () => number | undefined;
 }) {
   const isOpen = node.attrs.open as boolean;
   const title = node.attrs.title as string;
@@ -64,15 +64,11 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: {
   const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      // Enterでコンテンツエリアにフォーカス移動
       if (!isOpen) {
         updateAttributes({ open: true });
       }
-      // ノードの後ろにカーソルを移動
       const pos = getPos();
       if (pos !== undefined) {
-        // コンテンツの最初の段落にフォーカス
-        const nodeSize = node.nodeSize;
         editor.chain().focus().setTextSelection(pos + 2).run();
       }
     }
@@ -80,7 +76,6 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: {
 
   return (
     <NodeViewWrapper className="toggle-block my-2">
-      {/* タイトル行 */}
       <div className="toggle-title flex items-center gap-1.5 group">
         <button
           type="button"
@@ -101,8 +96,6 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: {
           contentEditable={false}
         />
       </div>
-
-      {/* コンテンツエリア（開いているときのみ表示） */}
       {isOpen && (
         <div className="toggle-content pl-6 mt-1 border-l-2 border-border/50">
           <NodeViewContent className="toggle-content-inner outline-none" />
@@ -154,14 +147,12 @@ const ToggleNode = Node.create({
 
   addKeyboardShortcuts() {
     return {
-      // Enterキーでトグル内の新しい段落を作成
       Enter: ({ editor }) => {
         const { state } = editor.view;
         const { $from } = state.selection;
-        // toggleBlock内にいる場合は通常のEnter動作
         for (let d = $from.depth; d >= 0; d--) {
           if ($from.node(d).type.name === "toggleBlock") {
-            return false; // デフォルトのEnter動作に任せる
+            return false;
           }
         }
         return false;
@@ -171,7 +162,7 @@ const ToggleNode = Node.create({
 
   addInputRules() {
     return [
-      {
+      new InputRule({
         find: /^> $/,
         handler: ({ state, range, chain }) => {
           chain()
@@ -183,7 +174,7 @@ const ToggleNode = Node.create({
             })
             .run();
         },
-      },
+      }),
     ];
   },
 });
@@ -220,14 +211,12 @@ const IndentExtension = Extension.create({
         const { state, dispatch } = this.editor.view;
         const { $from } = state.selection;
 
-        // リストアイテム内ならネストを深くする
         for (let d = $from.depth; d >= 0; d--) {
           if ($from.node(d).type.name === "listItem") {
             return this.editor.commands.sinkListItem("listItem");
           }
         }
 
-        // それ以外はインデントを増やす
         const node = $from.node();
         const attrs = node.attrs;
         const currentIndent = (attrs.indent as number) || 0;
@@ -266,7 +255,7 @@ const IndentExtension = Extension.create({
 // ===== Markdown ↔ HTML 変換 =====
 
 function markdownToHtml(md: string): string {
-  if (!md) return "";
+  if (!md) return "<p></p>";
 
   const lines = md.split("\n");
   const output: string[] = [];
@@ -319,7 +308,7 @@ function markdownToHtml(md: string): string {
       i++; continue;
     }
 
-    // トグル（> タイトル → toggleBlock）
+    // トグル
     const toggleMatch = line.match(/^> (.+)$/);
     if (toggleMatch) {
       closeAllLists();
@@ -377,7 +366,7 @@ function markdownToHtml(md: string): string {
   }
 
   closeAllLists();
-  return output.join("\n");
+  return output.join("\n") || "<p></p>";
 }
 
 function htmlToMarkdown(html: string): string {
@@ -385,13 +374,13 @@ function htmlToMarkdown(html: string): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, "text/html");
 
-  function nodeToMd(node: Node, listIndent = 0): string {
-    if (node.nodeType === Node.TEXT_NODE) return node.textContent || "";
-    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+  function processNode(node: globalThis.Node, listIndent = 0): string {
+    if (node.nodeType === globalThis.Node.TEXT_NODE) return node.textContent || "";
+    if (node.nodeType !== globalThis.Node.ELEMENT_NODE) return "";
 
     const el = node as HTMLElement;
     const tag = el.tagName.toLowerCase();
-    const children = Array.from(el.childNodes).map((c) => nodeToMd(c, listIndent)).join("");
+    const childrenText = Array.from(el.childNodes).map((c) => processNode(c, listIndent)).join("");
 
     const marginLeft = el.style?.marginLeft;
     const indentLevel = marginLeft ? Math.round(parseInt(marginLeft) / 32) : 0;
@@ -412,27 +401,27 @@ function htmlToMarkdown(html: string): string {
     }
 
     switch (tag) {
-      case "h1": return `# ${children}\n\n`;
-      case "h2": return `## ${children}\n\n`;
-      case "h3": return `### ${children}\n\n`;
-      case "h4": return `#### ${children}\n\n`;
-      case "h5": return `##### ${children}\n\n`;
-      case "h6": return `###### ${children}\n\n`;
-      case "p": return `${indentStr}${children}\n\n`;
-      case "strong": case "b": return `**${children}**`;
-      case "em": case "i": return `*${children}*`;
-      case "code": return `\`${children}\``;
-      case "a": return `[${children}](${el.getAttribute("href") || ""})`;
+      case "h1": return `# ${childrenText}\n\n`;
+      case "h2": return `## ${childrenText}\n\n`;
+      case "h3": return `### ${childrenText}\n\n`;
+      case "h4": return `#### ${childrenText}\n\n`;
+      case "h5": return `##### ${childrenText}\n\n`;
+      case "h6": return `###### ${childrenText}\n\n`;
+      case "p": return `${indentStr}${childrenText}\n\n`;
+      case "strong": case "b": return `**${childrenText}**`;
+      case "em": case "i": return `*${childrenText}*`;
+      case "code": return `\`${childrenText}\``;
+      case "a": return `[${childrenText}](${el.getAttribute("href") || ""})`;
       case "hr": return `---\n\n`;
       case "br": return "\n";
       case "ul": {
         const prefix = "    ".repeat(listIndent);
         const items = Array.from(el.querySelectorAll(":scope > li")).map((li) => {
           const subList = (li as HTMLElement).querySelector("ul, ol");
-          const subMd = subList ? nodeToMd(subList, listIndent + 1) : "";
+          const subMd = subList ? processNode(subList, listIndent + 1) : "";
           const liText = Array.from(li.childNodes)
             .filter((c) => !(c instanceof Element && (c.tagName === "UL" || c.tagName === "OL")))
-            .map((c) => nodeToMd(c, listIndent))
+            .map((c) => processNode(c, listIndent))
             .join("").trim();
           return `${prefix}- ${liText}\n${subMd}`;
         });
@@ -442,22 +431,22 @@ function htmlToMarkdown(html: string): string {
         const prefix = "    ".repeat(listIndent);
         const items = Array.from(el.querySelectorAll(":scope > li")).map((li, idx) => {
           const subList = (li as HTMLElement).querySelector("ul, ol");
-          const subMd = subList ? nodeToMd(subList, listIndent + 1) : "";
+          const subMd = subList ? processNode(subList, listIndent + 1) : "";
           const liText = Array.from(li.childNodes)
             .filter((c) => !(c instanceof Element && (c.tagName === "UL" || c.tagName === "OL")))
-            .map((c) => nodeToMd(c, listIndent))
+            .map((c) => processNode(c, listIndent))
             .join("").trim();
           return `${prefix}${idx + 1}. ${liText}\n${subMd}`;
         });
         return items.join("") + "\n";
       }
-      case "li": return children;
-      case "body": case "div": return children;
-      default: return children;
+      case "li": return childrenText;
+      case "body": case "div": return childrenText;
+      default: return childrenText;
     }
   }
 
-  const result = nodeToMd(doc.body);
+  const result = processNode(doc.body);
   return result.replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -497,11 +486,33 @@ interface RichEditorProps {
 
 export default function RichEditor({ value, onChange, placeholder }: RichEditorProps) {
   const [mode, setMode] = useState<"wysiwyg" | "markdown">("wysiwyg");
-  // isUpdatingFromEditor: エディタ内部の変更によるonChange呼び出し中はtrueにして
-  // 外部からのvalue変化によるエディタ再初期化を防ぐ
-  const isUpdatingFromEditor = React.useRef(false);
-  const initialValueRef = React.useRef(value);
 
+  // 内部Markdown state — これが真実の情報源
+  // 親のvalueは初期値としてのみ使用する
+  const [internalMd, setInternalMd] = useState(value);
+
+  // onChangeをrefに保持して、Tiptap onUpdate内で最新のonChangeを呼べるようにする
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  // 親からvalueが変わった場合（記事ロード完了時）に内部stateを同期する
+  // ただし、初回レンダリング後のユーザー入力による変化は無視する
+  const isFirstLoad = useRef(true);
+  const prevExternalValue = useRef(value);
+
+  useEffect(() => {
+    // 親のvalueが変わった場合のみ（記事ロード完了時など）
+    if (prevExternalValue.current !== value) {
+      prevExternalValue.current = value;
+      // 初回ロードまたは大幅な変化（記事切り替え）のみ反映
+      if (isFirstLoad.current || Math.abs(value.length - internalMd.length) > 50) {
+        setInternalMd(value);
+        isFirstLoad.current = false;
+      }
+    }
+  }, [value]); // internalMdを依存配列に入れない
+
+  // Tiptapエディタ
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -525,14 +536,12 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
       ToggleNode,
       IndentExtension,
     ],
-    content: markdownToHtml(initialValueRef.current),
+    content: markdownToHtml(value),
     onUpdate({ editor }) {
-      isUpdatingFromEditor.current = true;
       const html = editor.getHTML();
       const md = htmlToMarkdown(html);
-      onChange(md);
-      // 次のtickでフラグを戻す
-      setTimeout(() => { isUpdatingFromEditor.current = false; }, 0);
+      setInternalMd(md);
+      onChangeRef.current(md);
     },
     editorProps: {
       attributes: {
@@ -541,21 +550,36 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
     },
   });
 
-  // 外部からvalueが変化した場合（記事読み込み完了時など）のみエディタを更新
-  // エディタ自身の入力による変化は無視する
-  const prevValueRef = React.useRef(value);
+  // internalMdが外部ロードで変わった場合のみエディタを更新
+  const editorSyncRef = useRef(value);
   useEffect(() => {
     if (!editor) return;
-    if (isUpdatingFromEditor.current) return; // エディタ内部の変化は無視
-    if (prevValueRef.current === value) return; // 変化なし
-    prevValueRef.current = value;
-    // 外部からの変化（記事ロード完了）のみエディタに反映
-    editor.commands.setContent(markdownToHtml(value));
-  }, [editor, value]);
+    if (editorSyncRef.current === internalMd) return;
+    // 内部stateが変わったのがユーザー入力ではなく外部ロードの場合のみ
+    // 判定: prevExternalValueが変わっている = 外部ロード
+    if (prevExternalValue.current === internalMd) {
+      editorSyncRef.current = internalMd;
+      if (mode === "wysiwyg") {
+        editor.commands.setContent(markdownToHtml(internalMd));
+      }
+    }
+  }, [editor, internalMd, mode]);
+
+  // Markdownモードでの入力
+  const handleMarkdownChange = useCallback((newMd: string) => {
+    setInternalMd(newMd);
+    onChangeRef.current(newMd);
+  }, []);
 
   const handleModeSwitch = (newMode: "wysiwyg" | "markdown") => {
     if (newMode === "wysiwyg" && mode === "markdown" && editor) {
-      editor.commands.setContent(markdownToHtml(value));
+      editor.commands.setContent(markdownToHtml(internalMd));
+    }
+    if (newMode === "markdown" && mode === "wysiwyg" && editor) {
+      // WYSIWYGからMarkdownに切り替え時、最新のHTMLからMarkdownを生成
+      const html = editor.getHTML();
+      const md = htmlToMarkdown(html);
+      setInternalMd(md);
     }
     setMode(newMode);
   };
@@ -708,8 +732,8 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
         </div>
       ) : (
         <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={internalMd}
+          onChange={(e) => handleMarkdownChange(e.target.value)}
           placeholder={"# 見出し1\n## 見出し2\n\n本文を入力...\n\n- リスト項目\n    - ネスト項目（Tab）\n\n> トグルタイトル\n    トグル内容（4スペースインデント）\n\n**太字** *斜体*"}
           className="w-full min-h-[500px] px-6 py-5 text-sm leading-relaxed bg-card font-mono resize-y focus:outline-none placeholder:text-muted-foreground/30"
           style={{ tabSize: 4 }}
@@ -719,8 +743,8 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
               const target = e.currentTarget;
               const start = target.selectionStart;
               const end = target.selectionEnd;
-              const newValue = value.substring(0, start) + "    " + value.substring(end);
-              onChange(newValue);
+              const newValue = internalMd.substring(0, start) + "    " + internalMd.substring(end);
+              handleMarkdownChange(newValue);
               requestAnimationFrame(() => {
                 target.selectionStart = start + 4;
                 target.selectionEnd = start + 4;
