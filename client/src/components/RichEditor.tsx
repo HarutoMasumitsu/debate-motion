@@ -497,7 +497,10 @@ interface RichEditorProps {
 
 export default function RichEditor({ value, onChange, placeholder }: RichEditorProps) {
   const [mode, setMode] = useState<"wysiwyg" | "markdown">("wysiwyg");
-  const [initialized, setInitialized] = useState(false);
+  // isUpdatingFromEditor: エディタ内部の変更によるonChange呼び出し中はtrueにして
+  // 外部からのvalue変化によるエディタ再初期化を防ぐ
+  const isUpdatingFromEditor = React.useRef(false);
+  const initialValueRef = React.useRef(value);
 
   const editor = useEditor({
     extensions: [
@@ -522,11 +525,14 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
       ToggleNode,
       IndentExtension,
     ],
-    content: markdownToHtml(value),
+    content: markdownToHtml(initialValueRef.current),
     onUpdate({ editor }) {
+      isUpdatingFromEditor.current = true;
       const html = editor.getHTML();
       const md = htmlToMarkdown(html);
       onChange(md);
+      // 次のtickでフラグを戻す
+      setTimeout(() => { isUpdatingFromEditor.current = false; }, 0);
     },
     editorProps: {
       attributes: {
@@ -535,13 +541,17 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
     },
   });
 
+  // 外部からvalueが変化した場合（記事読み込み完了時など）のみエディタを更新
+  // エディタ自身の入力による変化は無視する
+  const prevValueRef = React.useRef(value);
   useEffect(() => {
-    if (!editor || initialized) return;
-    if (value) {
-      editor.commands.setContent(markdownToHtml(value));
-    }
-    setInitialized(true);
-  }, [editor, value, initialized]);
+    if (!editor) return;
+    if (isUpdatingFromEditor.current) return; // エディタ内部の変化は無視
+    if (prevValueRef.current === value) return; // 変化なし
+    prevValueRef.current = value;
+    // 外部からの変化（記事ロード完了）のみエディタに反映
+    editor.commands.setContent(markdownToHtml(value));
+  }, [editor, value]);
 
   const handleModeSwitch = (newMode: "wysiwyg" | "markdown") => {
     if (newMode === "wysiwyg" && mode === "markdown" && editor) {
