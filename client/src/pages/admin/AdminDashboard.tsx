@@ -12,20 +12,24 @@ import {
   Users,
   BarChart3,
   ChevronRight,
+  FolderOpen,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { useArticles } from "@/hooks/useArticles";
+import { useArticles, useCategories } from "@/hooks/useArticles";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { DEMO_COMMENTS } from "@/lib/demo-data";
 import { toast } from "sonner";
-import type { Article, PublicComment } from "@/lib/types";
+import type { Article, PublicComment, Category } from "@/lib/types";
 
 export default function AdminDashboard() {
   const { profile, signOut, isAdmin } = useAuth();
   const [, navigate] = useLocation();
   const { articles, loading, refetch } = useArticles({ status: "all" });
-  const [activeTab, setActiveTab] = useState<"articles" | "comments" | "users">("articles");
+  const [activeTab, setActiveTab] = useState<
+    "articles" | "comments" | "categories" | "users"
+  >("articles");
 
   const isDemoMode = !isSupabaseConfigured();
 
@@ -86,6 +90,7 @@ export default function AdminDashboard() {
 
   const sidebarItems = [
     { id: "articles" as const, label: "記事管理", icon: FileText },
+    { id: "categories" as const, label: "カテゴリー管理", icon: FolderOpen },
     { id: "comments" as const, label: "コメント管理", icon: MessageSquare },
     ...(isAdmin || isDemoMode
       ? [{ id: "users" as const, label: "ユーザー管理", icon: Users }]
@@ -168,12 +173,12 @@ export default function AdminDashboard() {
         </div>
 
         {/* Mobile tabs */}
-        <div className="md:hidden flex border-b border-border">
+        <div className="md:hidden flex border-b border-border overflow-x-auto">
           {sidebarItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex-1 py-3 text-xs font-medium text-center transition-colors ${
+              className={`flex-1 py-3 text-xs font-medium text-center transition-colors whitespace-nowrap px-2 ${
                 activeTab === item.id
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground"
@@ -269,9 +274,11 @@ export default function AdminDashboard() {
                         </div>
                         <h3 className="font-medium text-sm mb-1">{article.title}</h3>
                         <p className="text-xs text-muted-foreground">
+                          {article.author_name && (
+                            <span className="mr-2">著者: {article.author_name}</span>
+                          )}
                           {new Date(article.updated_at).toLocaleDateString("ja-JP")} 更新
                           {" · "}♥ {article.likes_count}
-                          {article.author && ` · ${article.author.display_name}`}
                         </p>
                       </div>
 
@@ -330,6 +337,7 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {activeTab === "categories" && <CategoriesTab />}
           {activeTab === "comments" && <CommentsTab />}
           {activeTab === "users" && <UsersTab />}
         </div>
@@ -338,6 +346,210 @@ export default function AdminDashboard() {
   );
 }
 
+// ===== Categories Tab =====
+function CategoriesTab() {
+  const { categories, loading } = useCategories();
+  const [localCategories, setLocalCategories] = useState<Category[]>([]);
+  const [newName, setNewName] = useState("");
+  const [newSlug, setNewSlug] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const isDemoMode = !isSupabaseConfigured();
+
+  useEffect(() => {
+    setLocalCategories(categories);
+  }, [categories]);
+
+  const generateSlug = (name: string) => {
+    return name
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+  };
+
+  const handleNameChange = (value: string) => {
+    setNewName(value);
+    if (!newSlug || newSlug === generateSlug(newName)) {
+      setNewSlug(generateSlug(value));
+    }
+  };
+
+  const handleAddCategory = async () => {
+    if (!newName.trim()) {
+      toast.error("カテゴリー名を入力してください。");
+      return;
+    }
+    const slug = newSlug.trim() || generateSlug(newName);
+    if (!slug) {
+      toast.error("スラッグ（英語のURL用名前）を入力してください。");
+      return;
+    }
+
+    if (isDemoMode) {
+      const newCat: Category = {
+        id: `cat-${Date.now()}`,
+        name: newName.trim(),
+        slug,
+        description: newDescription.trim() || null,
+        image_url: null,
+        created_at: new Date().toISOString(),
+      };
+      setLocalCategories((prev) => [...prev, newCat]);
+      setNewName("");
+      setNewSlug("");
+      setNewDescription("");
+      toast.success("カテゴリーを追加しました（デモモード）。");
+      return;
+    }
+
+    const { error } = await supabase.from("categories").insert({
+      name: newName.trim(),
+      slug,
+      description: newDescription.trim() || null,
+    });
+
+    if (error) {
+      if (error.code === "23505") {
+        toast.error("同じスラッグのカテゴリーが既に存在します。");
+      } else {
+        toast.error("カテゴリーの追加に失敗しました。");
+      }
+    } else {
+      toast.success("カテゴリーを追加しました。");
+      setNewName("");
+      setNewSlug("");
+      setNewDescription("");
+      // Refresh
+      const { data } = await supabase.from("categories").select("*").order("name");
+      if (data) setLocalCategories(data);
+    }
+  };
+
+  const handleDeleteCategory = async (catId: string) => {
+    if (!confirm("このカテゴリーを削除しますか？紐づいた記事のカテゴリーは空になります。")) return;
+
+    if (isDemoMode) {
+      setLocalCategories((prev) => prev.filter((c) => c.id !== catId));
+      toast.success("カテゴリーを削除しました（デモモード）。");
+      return;
+    }
+
+    const { error } = await supabase.from("categories").delete().eq("id", catId);
+    if (error) {
+      toast.error("カテゴリーの削除に失敗しました。");
+    } else {
+      toast.success("カテゴリーを削除しました。");
+      setLocalCategories((prev) => prev.filter((c) => c.id !== catId));
+    }
+  };
+
+  return (
+    <div>
+      <h1 className="font-serif text-xl font-semibold mb-6">カテゴリー管理</h1>
+
+      {/* Add new category form */}
+      <div className="bg-card rounded-lg border border-border p-5 mb-6">
+        <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
+          <Plus className="h-4 w-4" />
+          新しいカテゴリーを追加
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">
+              カテゴリー名 <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="例: Technology"
+              className="w-full px-3 py-2 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">
+              スラッグ（URL用） <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="text"
+              value={newSlug}
+              onChange={(e) => setNewSlug(e.target.value)}
+              placeholder="例: technology"
+              className="w-full px-3 py-2 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">
+              説明（任意）
+            </label>
+            <input
+              type="text"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              placeholder="カテゴリーの説明"
+              className="w-full px-3 py-2 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <Button size="sm" className="gap-1.5" onClick={handleAddCategory}>
+            <Save className="h-3.5 w-3.5" />
+            追加
+          </Button>
+        </div>
+      </div>
+
+      {/* Category list */}
+      {loading ? (
+        <div className="space-y-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-card rounded-lg border border-border p-4 animate-pulse">
+              <div className="h-4 bg-muted rounded w-1/3" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {localCategories.map((cat) => (
+            <div
+              key={cat.id}
+              className="bg-card rounded-lg border border-border p-4 flex items-center justify-between gap-4"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-1">
+                  <h3 className="font-medium text-sm">{cat.name}</h3>
+                  <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded">
+                    /{cat.slug}
+                  </span>
+                </div>
+                {cat.description && (
+                  <p className="text-xs text-muted-foreground">{cat.description}</p>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                onClick={() => handleDeleteCategory(cat.id)}
+                title="カテゴリーを削除"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+
+          {localCategories.length === 0 && (
+            <div className="text-center py-12">
+              <FolderOpen className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-muted-foreground text-sm">カテゴリーはまだありません。</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===== Comments Tab =====
 function CommentsTab() {
   const [comments, setComments] = useState<PublicComment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -444,6 +656,7 @@ function CommentsTab() {
   );
 }
 
+// ===== Users Tab =====
 function UsersTab() {
   return (
     <div>

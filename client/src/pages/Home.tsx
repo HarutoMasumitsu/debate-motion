@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { Search, ArrowRight, TrendingUp, Clock } from "lucide-react";
+import { Search, ArrowRight, TrendingUp, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ArticleCard from "@/components/ArticleCard";
 import { useArticles, useCategories } from "@/hooks/useArticles";
-import { HERO_IMAGE } from "@/lib/demo-data";
+import { HERO_IMAGE, DEFAULT_THUMBNAIL } from "@/lib/demo-data";
 import { motion } from "framer-motion";
 
 export default function Home() {
@@ -32,7 +32,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col">
       <Header />
 
-      {/* Hero Section */}
+      {/* Hero Section - compact height */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0">
           <img
@@ -43,7 +43,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-black/30" />
         </div>
 
-        <div className="relative container py-20 md:py-28">
+        <div className="relative container py-10 md:py-14">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -55,7 +55,7 @@ export default function Home() {
               <br />
               <span className="text-amber-300">Motion</span>解説
             </h1>
-            <p className="text-base md:text-lg text-gray-200 leading-relaxed mb-8 max-w-lg">
+            <p className="text-base md:text-lg text-gray-200 leading-relaxed mb-6 max-w-lg">
               ディベートのMotion（論題）を深く理解するための解説プラットフォーム。
               各テーマの背景知識から論点整理まで、体系的に学べます。
             </p>
@@ -81,7 +81,7 @@ export default function Home() {
       </section>
 
       <main className="flex-1">
-        {/* Categories Section */}
+        {/* Categories Section - compact cards */}
         <section className="container py-12 md:py-16">
           <div className="flex items-center justify-between mb-8">
             <h2 className="font-serif text-xl md:text-2xl font-semibold">
@@ -94,33 +94,41 @@ export default function Home() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {categories.map((cat, i) => (
               <motion.div
                 key={cat.id}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: i * 0.1 }}
+                transition={{ duration: 0.3, delay: i * 0.08 }}
               >
                 <Link href={`/categories/${cat.slug}`}>
-                  <div className="group relative rounded-lg overflow-hidden aspect-[2/1] cursor-pointer">
-                    {cat.image_url && (
-                      <img
-                        src={cat.image_url}
-                        alt={cat.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        loading="lazy"
-                      />
+                  <div className="group flex items-center gap-3 bg-card rounded-lg border border-border p-3.5 hover:shadow-md transition-all duration-300 hover:-translate-y-0.5 cursor-pointer">
+                    {cat.image_url ? (
+                      <div className="w-12 h-12 rounded-md overflow-hidden shrink-0">
+                        <img
+                          src={cat.image_url}
+                          alt={cat.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          loading="lazy"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                        <span className="font-serif text-lg font-bold text-primary">
+                          {cat.name.charAt(0)}
+                        </span>
+                      </div>
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-5">
-                      <h3 className="font-serif text-lg font-semibold text-white mb-1">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-serif text-base font-semibold group-hover:text-primary transition-colors">
                         {cat.name}
                       </h3>
                       {cat.description && (
-                        <p className="text-sm text-gray-200">{cat.description}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-1">{cat.description}</p>
                       )}
                     </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
                   </div>
                 </Link>
               </motion.div>
@@ -145,9 +153,8 @@ export default function Home() {
                     key={i}
                     className="bg-card rounded-lg border border-border animate-pulse"
                   >
-                    <div className="aspect-[16/9] bg-muted" />
-                    <div className="p-5 space-y-3">
-                      <div className="h-3 bg-muted rounded w-16" />
+                    <div className="h-36 bg-muted" />
+                    <div className="p-4 space-y-3">
                       <div className="h-4 bg-muted rounded w-3/4" />
                       <div className="h-3 bg-muted rounded w-full" />
                     </div>
@@ -199,16 +206,14 @@ export default function Home() {
                 >
                   <Link href={`/articles/${article.slug}`}>
                     <div className="group flex gap-4 bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all duration-300 hover:-translate-y-0.5">
-                      {article.thumbnail_url && (
-                        <div className="w-24 h-24 rounded-md overflow-hidden shrink-0">
-                          <img
-                            src={article.thumbnail_url}
-                            alt={article.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                            loading="lazy"
-                          />
-                        </div>
-                      )}
+                      <div className="w-24 h-24 rounded-md overflow-hidden shrink-0">
+                        <img
+                          src={article.thumbnail_url || DEFAULT_THUMBNAIL}
+                          alt={article.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          loading="lazy"
+                        />
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-medium text-primary">
@@ -221,11 +226,19 @@ export default function Home() {
                         <h3 className="font-serif text-sm font-semibold leading-snug group-hover:text-primary transition-colors line-clamp-2 mb-1">
                           {article.title}
                         </h3>
-                        {article.excerpt && (
-                          <p className="text-xs text-muted-foreground line-clamp-2">
-                            {article.excerpt}
-                          </p>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {article.author_name && (
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Users className="h-3 w-3" />
+                              {article.author_name}
+                            </span>
+                          )}
+                          {article.excerpt && !article.author_name && (
+                            <p className="text-xs text-muted-foreground line-clamp-1">
+                              {article.excerpt}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </Link>

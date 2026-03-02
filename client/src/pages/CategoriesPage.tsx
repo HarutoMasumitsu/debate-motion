@@ -3,6 +3,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { useCategories } from "@/hooks/useArticles";
 import { motion } from "framer-motion";
+import { ChevronRight } from "lucide-react";
 
 export default function CategoriesPage() {
   const { categories, loading } = useCategories();
@@ -20,43 +21,61 @@ export default function CategoriesPage() {
         </p>
 
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="space-y-3">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="aspect-[2/1] bg-muted rounded-lg animate-pulse" />
+              <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="space-y-3">
             {categories.map((cat, i) => (
               <motion.div
                 key={cat.id}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: i * 0.1 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
               >
                 <Link href={`/categories/${cat.slug}`}>
-                  <div className="group relative rounded-lg overflow-hidden aspect-[2/1] cursor-pointer shadow-sm hover:shadow-lg transition-shadow duration-300">
+                  <div className="group flex items-center gap-4 bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all duration-300 hover:-translate-y-0.5 cursor-pointer">
+                    {/* Small thumbnail */}
                     {cat.image_url && (
-                      <img
-                        src={cat.image_url}
-                        alt={cat.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        loading="lazy"
-                      />
+                      <div className="w-16 h-16 rounded-md overflow-hidden shrink-0">
+                        <img
+                          src={cat.image_url}
+                          alt={cat.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          loading="lazy"
+                        />
+                      </div>
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-6">
-                      <h2 className="font-serif text-xl font-semibold text-white mb-1">
+                    {!cat.image_url && (
+                      <div className="w-16 h-16 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                        <span className="font-serif text-xl font-bold text-primary">
+                          {cat.name.charAt(0)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <h2 className="font-serif text-lg font-semibold group-hover:text-primary transition-colors">
                         {cat.name}
                       </h2>
                       {cat.description && (
-                        <p className="text-sm text-gray-200">{cat.description}</p>
+                        <p className="text-sm text-muted-foreground line-clamp-1">
+                          {cat.description}
+                        </p>
                       )}
                     </div>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
                   </div>
                 </Link>
               </motion.div>
             ))}
+
+            {categories.length === 0 && (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">カテゴリーはまだありません。</p>
+              </div>
+            )}
           </div>
         )}
       </main>

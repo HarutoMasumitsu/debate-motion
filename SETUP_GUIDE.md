@@ -15,7 +15,7 @@
 ログイン後、ダッシュボードから「New Project」をクリックし、以下の情報を入力します。
 
 | 項目 | 入力内容 |
-|------|---------|
+| --- | --- |
 | Organization | 自分の組織名（初回は自動作成されます） |
 | Project name | `debate-motion`（任意の名前） |
 | Database Password | 安全なパスワードを設定（後で使うのでメモしてください） |
@@ -29,9 +29,9 @@
 プロジェクトが作成されたら、左メニューの **Settings → API** に移動します。以下の2つの値をメモしてください。
 
 | 項目 | 説明 |
-|------|------|
+| --- | --- |
 | Project URL | `https://xxxxx.supabase.co` 形式のURL |
-| anon (public) key | `eyJhbGciOi...` で始まる長い文字列 |
+| anon (public ) key | `eyJhbGciOi...` で始まる長い文字列 |
 
 これらは後ほどVercelの環境変数として設定します。
 
@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS articles (
   thumbnail_url TEXT,
   category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
   author_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  author_name TEXT,
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
   likes_count INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -231,7 +232,7 @@ CREATE POLICY "Writers and admins can create internal comments" ON internal_comm
 Supabaseダッシュボードの左メニューから **Authentication → Users** に移動し、「Add user」→「Create new user」をクリックします。
 
 | 項目 | 入力内容 |
-|------|---------|
+| --- | --- |
 | Email | 管理者のメールアドレス |
 | Password | 安全なパスワード |
 | Auto Confirm User | チェックを入れる |
@@ -259,7 +260,7 @@ Supabaseダッシュボードの左メニューから **Authentication → Users
 インポート画面で以下の設定を行います。
 
 | 項目 | 設定値 |
-|------|--------|
+| --- | --- |
 | Framework Preset | Vite |
 | Build Command | `pnpm build` |
 | Output Directory | `dist/public` |
@@ -270,11 +271,11 @@ Supabaseダッシュボードの左メニューから **Authentication → Users
 「Environment Variables」セクションで、以下の2つの変数を追加します。
 
 | 変数名 | 値 |
-|--------|-----|
+| --- | --- |
 | `VITE_SUPABASE_URL` | Supabaseの Project URL（手順1-3でメモしたもの） |
 | `VITE_SUPABASE_ANON_KEY` | Supabaseの anon key（手順1-3でメモしたもの） |
 
-すべて入力したら「Deploy」をクリックします。数分でデプロイが完了し、`https://your-project.vercel.app` のURLでサイトにアクセスできるようになります。
+すべて入力したら「Deploy」をクリックします。数分でデプロイが完了し、`https://your-project.vercel.app` のURLでサイトにアクセスできるようになります 。
 
 ---
 
@@ -283,10 +284,14 @@ Supabaseダッシュボードの左メニューから **Authentication → Users
 デプロイが完了したら、以下の項目を確認してください。
 
 1. トップページが正常に表示されること
-2. `/login` ページで管理者アカウントでログインできること
-3. `/admin` ページで管理画面にアクセスできること
-4. 記事の作成・編集・公開が正常に動作すること
-5. 閲覧者がコメントやいいねを投稿できること
+
+1. `/login` ページで管理者アカウントでログインできること
+
+1. `/admin` ページで管理画面にアクセスできること
+
+1. 記事の作成・編集・公開が正常に動作すること
+
+1. 閲覧者がコメントやいいねを投稿できること
 
 ---
 
@@ -294,7 +299,7 @@ Supabaseダッシュボードの左メニューから **Authentication → Users
 
 ### カテゴリーの追加
 
-新しいカテゴリーを追加するには、Supabaseダッシュボードの **Table Editor → categories** テーブルで直接行を追加してください。`name`（表示名）、`slug`（URL用の英字識別子）、`description`（説明文）を入力します。
+管理画面のダッシュボードに「カテゴリー管理」タブがあります。そこからカテゴリー名、スラッグ（URL用の英字識別子）、説明文を入力して追加できます。Supabaseダッシュボードの Table Editor → categories テーブルから直接追加することも可能です。
 
 ### 執筆者の追加
 
@@ -309,8 +314,9 @@ Vercelダッシュボードの **Settings → Domains** から、独自ドメイ
 ## トラブルシューティング
 
 | 症状 | 原因と対処法 |
-|------|-------------|
+| --- | --- |
 | ログインできない | Supabaseの Authentication → Users でユーザーが存在するか確認。Auto Confirm が有効か確認。 |
 | 記事が保存できない | RLSポリシーが正しく設定されているか確認。profiles テーブルの role が正しいか確認。 |
 | 画面が真っ白 | ブラウザの開発者ツール（F12）でエラーを確認。環境変数が正しく設定されているか確認。 |
 | デモモードのまま | Vercelの環境変数 `VITE_SUPABASE_URL` と `VITE_SUPABASE_ANON_KEY` が設定されているか確認。再デプロイが必要な場合があります。 |
+

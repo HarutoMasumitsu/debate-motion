@@ -23,11 +23,12 @@ export interface Article {
   id: string;
   title: string;
   slug: string;
-  content: any; // BlockNote JSON content
+  content: any; // BlockNote JSON content or Markdown string
   excerpt: string | null;
   thumbnail_url: string | null;
   category_id: string | null;
   author_id: string;
+  author_name: string | null; // Free-text author name (e.g. "益満・田中")
   status: "draft" | "published";
   likes_count: number;
   created_at: string;

@@ -183,6 +183,42 @@
   }
 
   .prose-article li {
-    margin-bottom: 0.5em;
+    margin-bottom: 0.4em;
+  }
+
+  /* Nested list styles - different markers per depth */
+  .prose-article ul {
+    list-style-type: disc;
+  }
+  .prose-article ul ul {
+    list-style-type: circle;
+    margin-bottom: 0.25em;
+    margin-top: 0.25em;
+  }
+  .prose-article ul ul ul {
+    list-style-type: square;
+  }
+  .prose-article ul ul ul ul {
+    list-style-type: disc;
+  }
+
+  /* Ordered list: restart numbering at each nesting level */
+  .prose-article ol {
+    list-style-type: decimal;
+    counter-reset: list-counter;
+  }
+  .prose-article ol ol {
+    list-style-type: lower-alpha;
+    margin-bottom: 0.25em;
+    margin-top: 0.25em;
+  }
+  .prose-article ol ol ol {
+    list-style-type: lower-roman;
+  }
+
+  /* Ensure nested lists have proper indentation */
+  .prose-article li > ul,
+  .prose-article li > ol {
+    padding-left: 1.5em;
   }
 }

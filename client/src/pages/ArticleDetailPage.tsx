@@ -6,7 +6,7 @@ import {
   Calendar,
   Clock,
   Tag,
-  User,
+  Users,
   MessageCircle,
   Send,
 } from "lucide-react";
@@ -14,84 +14,305 @@ import { Button } from "@/components/ui/button";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { useArticle, useComments, useLike } from "@/hooks/useArticles";
+import { DEFAULT_THUMBNAIL } from "@/lib/demo-data";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
-// Render BlockNote content
-function renderBlock(block: any): React.ReactNode {
-  if (!block) return null;
+// ===== Markdown Renderer with proper nested list support =====
 
-  const renderInlineContent = (content: any[]): React.ReactNode => {
-    if (!content) return null;
-    return content.map((item: any, idx: number) => {
-      if (item.type === "text") {
-        let el: React.ReactNode = item.text;
-        if (item.styles?.bold) el = <strong key={idx}>{el}</strong>;
-        if (item.styles?.italic) el = <em key={idx}>{el}</em>;
-        if (item.styles?.underline) el = <u key={idx}>{el}</u>;
-        return <span key={idx}>{el}</span>;
+interface MarkdownNode {
+  type: string;
+  content?: string;
+  children?: MarkdownNode[];
+  level?: number;
+  ordered?: boolean;
+  start?: number;
+}
+
+function parseMarkdown(text: string): MarkdownNode[] {
+  if (!text || typeof text !== "string") return [];
+
+  const lines = text.split("\n");
+  const nodes: MarkdownNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Empty line
+    if (line.trim() === "") {
+      i++;
+      continue;
+    }
+
+    // Heading
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      nodes.push({
+        type: "heading",
+        level: headingMatch[1].length,
+        content: headingMatch[2],
+      });
+      i++;
+      continue;
+    }
+
+    // Blockquote
+    if (line.trim().startsWith("> ")) {
+      let quoteContent = "";
+      while (i < lines.length && lines[i].trim().startsWith("> ")) {
+        quoteContent += lines[i].trim().replace(/^>\s?/, "") + "\n";
+        i++;
       }
-      if (item.type === "link") {
-        return (
+      nodes.push({ type: "blockquote", content: quoteContent.trim() });
+      continue;
+    }
+
+    // List (unordered or ordered) - collect all consecutive list lines
+    const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+    if (listMatch) {
+      const listNode = parseListBlock(lines, i);
+      nodes.push(listNode.node);
+      i = listNode.nextIndex;
+      continue;
+    }
+
+    // Regular paragraph - collect until empty line or special block
+    let paragraphContent = line;
+    i++;
+    while (i < lines.length) {
+      const nextLine = lines[i];
+      if (
+        nextLine.trim() === "" ||
+        nextLine.match(/^#{1,6}\s/) ||
+        nextLine.match(/^\s*([-*+]|\d+\.)\s/) ||
+        nextLine.trim().startsWith("> ")
+      ) {
+        break;
+      }
+      paragraphContent += " " + nextLine;
+      i++;
+    }
+    nodes.push({ type: "paragraph", content: paragraphContent });
+  }
+
+  return nodes;
+}
+
+function parseListBlock(
+  lines: string[],
+  startIndex: number
+): { node: MarkdownNode; nextIndex: number } {
+  // Determine if the first item is ordered or unordered
+  const firstLine = lines[startIndex];
+  const firstMatch = firstLine.match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+  if (!firstMatch) {
+    return { node: { type: "paragraph", content: firstLine }, nextIndex: startIndex + 1 };
+  }
+
+  const baseIndent = firstMatch[1].length;
+  const isOrdered = /^\d+\./.test(firstMatch[2]);
+
+  const items: MarkdownNode[] = [];
+  let i = startIndex;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const match = line.match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+
+    if (!match) {
+      // Not a list line - check if it's a continuation or end
+      if (line.trim() === "") {
+        // Check if next line continues the list
+        if (i + 1 < lines.length && lines[i + 1].match(/^(\s*)([-*+]|\d+\.)\s/)) {
+          i++;
+          continue;
+        }
+        break;
+      }
+      break;
+    }
+
+    const indent = match[1].length;
+
+    if (indent < baseIndent) {
+      // This belongs to a parent list
+      break;
+    }
+
+    if (indent === baseIndent) {
+      // Same level item
+      items.push({ type: "listItem", content: match[3] });
+      i++;
+    } else {
+      // Deeper indent - this is a sub-list, parse recursively
+      const subList = parseListBlock(lines, i);
+      // Attach sub-list to the last item
+      if (items.length > 0) {
+        if (!items[items.length - 1].children) {
+          items[items.length - 1].children = [];
+        }
+        items[items.length - 1].children!.push(subList.node);
+      }
+      i = subList.nextIndex;
+    }
+  }
+
+  return {
+    node: {
+      type: "list",
+      ordered: isOrdered,
+      start: isOrdered ? parseInt(firstMatch[2]) : undefined,
+      children: items,
+    },
+    nextIndex: i,
+  };
+}
+
+function renderInlineMarkdown(text: string): React.ReactNode {
+  if (!text) return null;
+
+  // Process inline formatting: bold, italic, inline code, links
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // Bold
+    const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+    // Italic
+    const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/);
+    // Inline code
+    const codeMatch = remaining.match(/`(.+?)`/);
+    // Link
+    const linkMatch = remaining.match(/\[(.+?)\]\((.+?)\)/);
+
+    // Find earliest match
+    const matches = [
+      boldMatch ? { type: "bold", match: boldMatch, index: boldMatch.index! } : null,
+      italicMatch ? { type: "italic", match: italicMatch, index: italicMatch.index! } : null,
+      codeMatch ? { type: "code", match: codeMatch, index: codeMatch.index! } : null,
+      linkMatch ? { type: "link", match: linkMatch, index: linkMatch.index! } : null,
+    ].filter(Boolean) as { type: string; match: RegExpMatchArray; index: number }[];
+
+    if (matches.length === 0) {
+      parts.push(remaining);
+      break;
+    }
+
+    matches.sort((a, b) => a.index - b.index);
+    const earliest = matches[0];
+
+    // Add text before the match
+    if (earliest.index > 0) {
+      parts.push(remaining.substring(0, earliest.index));
+    }
+
+    switch (earliest.type) {
+      case "bold":
+        parts.push(<strong key={key++}>{earliest.match[1]}</strong>);
+        remaining = remaining.substring(earliest.index + earliest.match[0].length);
+        break;
+      case "italic":
+        parts.push(<em key={key++}>{earliest.match[1]}</em>);
+        remaining = remaining.substring(earliest.index + earliest.match[0].length);
+        break;
+      case "code":
+        parts.push(
+          <code key={key++} className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">
+            {earliest.match[1]}
+          </code>
+        );
+        remaining = remaining.substring(earliest.index + earliest.match[0].length);
+        break;
+      case "link":
+        parts.push(
           <a
-            key={idx}
-            href={item.href}
+            key={key++}
+            href={earliest.match[2]}
             className="text-primary underline hover:text-primary/80"
             target="_blank"
             rel="noopener noreferrer"
           >
-            {renderInlineContent(item.content)}
+            {earliest.match[1]}
           </a>
         );
-      }
-      return null;
-    });
-  };
+        remaining = remaining.substring(earliest.index + earliest.match[0].length);
+        break;
+    }
+  }
 
-  switch (block.type) {
-    case "paragraph":
-      return (
-        <p key={block.id} className="mb-4 leading-relaxed">
-          {renderInlineContent(block.content)}
-        </p>
-      );
+  return <>{parts}</>;
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  const nodes = parseMarkdown(content);
+
+  return <div className="prose-article">{nodes.map((node, i) => renderNode(node, i))}</div>;
+}
+
+function renderNode(node: MarkdownNode, key: number): React.ReactNode {
+  switch (node.type) {
     case "heading": {
-      const level = block.props?.level || 2;
       const className = `font-serif font-semibold ${
-        level === 1
+        node.level === 1
           ? "text-2xl mt-8 mb-4"
-          : level === 2
+          : node.level === 2
           ? "text-xl mt-6 mb-3"
           : "text-lg mt-5 mb-2"
       }`;
-      const content = renderInlineContent(block.content);
-      if (level === 1) return <h1 key={block.id} className={className}>{content}</h1>;
-      if (level === 3) return <h3 key={block.id} className={className}>{content}</h3>;
-      return <h2 key={block.id} className={className}>{content}</h2>;
+      const level = Math.min(node.level || 2, 6);
+      if (level === 1) return <h1 key={key} className={className}>{renderInlineMarkdown(node.content || "")}</h1>;
+      if (level === 2) return <h2 key={key} className={className}>{renderInlineMarkdown(node.content || "")}</h2>;
+      if (level === 3) return <h3 key={key} className={className}>{renderInlineMarkdown(node.content || "")}</h3>;
+      if (level === 4) return <h4 key={key} className={className}>{renderInlineMarkdown(node.content || "")}</h4>;
+      if (level === 5) return <h5 key={key} className={className}>{renderInlineMarkdown(node.content || "")}</h5>;
+      return <h6 key={key} className={className}>{renderInlineMarkdown(node.content || "")}</h6>;
     }
-    case "bulletListItem":
+
+    case "paragraph":
       return (
-        <li key={block.id} className="mb-1 ml-5 list-disc">
-          {renderInlineContent(block.content)}
+        <p key={key} className="mb-4 leading-relaxed">
+          {renderInlineMarkdown(node.content || "")}
+        </p>
+      );
+
+    case "blockquote":
+      return (
+        <blockquote
+          key={key}
+          className="border-l-4 border-primary/30 pl-4 py-1 my-4 text-muted-foreground italic"
+        >
+          {renderInlineMarkdown(node.content || "")}
+        </blockquote>
+      );
+
+    case "list": {
+      const ListTag = node.ordered ? "ol" : "ul";
+      const listClass = node.ordered
+        ? "list-decimal pl-6 mb-4 space-y-1"
+        : "list-disc pl-6 mb-4 space-y-1";
+      return (
+        <ListTag key={key} className={listClass} start={node.start}>
+          {node.children?.map((child, ci) => renderNode(child, ci))}
+        </ListTag>
+      );
+    }
+
+    case "listItem":
+      return (
+        <li key={key} className="leading-relaxed">
+          {renderInlineMarkdown(node.content || "")}
+          {node.children?.map((child, ci) => renderNode(child, ci))}
         </li>
       );
-    case "numberedListItem":
-      return (
-        <li key={block.id} className="mb-1 ml-5 list-decimal">
-          {renderInlineContent(block.content)}
-        </li>
-      );
+
     default:
-      if (block.content && Array.isArray(block.content)) {
-        return (
-          <div key={block.id} className="mb-4">
-            {renderInlineContent(block.content)}
-          </div>
-        );
-      }
       return null;
   }
 }
+
+// ===== Main Component =====
 
 export default function ArticleDetailPage() {
   const params = useParams<{ slug: string }>();
@@ -131,7 +352,7 @@ export default function ArticleDetailPage() {
             <div className="h-4 bg-muted rounded w-24" />
             <div className="h-8 bg-muted rounded w-3/4" />
             <div className="h-4 bg-muted rounded w-1/2" />
-            <div className="aspect-[16/9] bg-muted rounded-lg" />
+            <div className="h-48 bg-muted rounded-lg" />
             <div className="space-y-3 pt-4">
               <div className="h-4 bg-muted rounded" />
               <div className="h-4 bg-muted rounded" />
@@ -172,6 +393,8 @@ export default function ArticleDetailPage() {
     day: "numeric",
   });
 
+  const displayThumbnail = article.thumbnail_url || DEFAULT_THUMBNAIL;
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -209,9 +432,15 @@ export default function ArticleDetailPage() {
 
               {/* Meta info */}
               <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mb-6">
-                {article.author && (
+                {article.author_name && (
                   <div className="flex items-center gap-1.5">
-                    <User className="h-3.5 w-3.5" />
+                    <Users className="h-3.5 w-3.5" />
+                    <span>{article.author_name}</span>
+                  </div>
+                )}
+                {!article.author_name && article.author && (
+                  <div className="flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5" />
                     <span>{article.author.display_name}</span>
                   </div>
                 )}
@@ -227,22 +456,23 @@ export default function ArticleDetailPage() {
                 )}
               </div>
 
-              {/* Thumbnail */}
-              {article.thumbnail_url && (
-                <div className="rounded-lg overflow-hidden mb-8 shadow-sm">
-                  <img
-                    src={article.thumbnail_url}
-                    alt={article.title}
-                    className="w-full aspect-[16/9] object-cover"
-                  />
-                </div>
-              )}
+              {/* Thumbnail - header style (shorter height) */}
+              <div className="rounded-lg overflow-hidden mb-8 shadow-sm">
+                <img
+                  src={displayThumbnail}
+                  alt={article.title}
+                  className="w-full h-48 md:h-56 object-cover"
+                />
+              </div>
 
               {/* Article content */}
-              <div className="prose-article">
-                {Array.isArray(article.content) &&
-                  article.content.map((block: any) => renderBlock(block))}
-              </div>
+              {typeof article.content === "string" ? (
+                <MarkdownContent content={article.content} />
+              ) : Array.isArray(article.content) ? (
+                <div className="prose-article">
+                  <p className="text-muted-foreground">コンテンツの表示に対応していない形式です。</p>
+                </div>
+              ) : null}
 
               {/* Like button */}
               <div className="flex items-center justify-center mt-10 mb-8 pt-8 border-t border-border">

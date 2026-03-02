@@ -8,6 +8,9 @@ export const CATEGORY_IMAGES: Record<string, string> = {
   choice: "https://private-us-east-1.manuscdn.com/sessionFile/6ktXfBQxLgQRB8thPqQzUy/sandbox/GIwjT0q2nSgM1uM3UK9v7K-img-4_1772174084000_na1fn_Y2F0ZWdvcnktY2hvaWNl.jpg?x-oss-process=image/resize,w_1920,h_1920/format,webp/quality,q_80&Expires=1798761600&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9wcml2YXRlLXVzLWVhc3QtMS5tYW51c2Nkbi5jb20vc2Vzc2lvbkZpbGUvNmt0WGZCUXhMZ1FSQjh0aFBxUXpVeS9zYW5kYm94L0dJd2pUMHEyblNnTTF1TTNVSzl2N0staW1nLTRfMTc3MjE3NDA4NDAwMF9uYTFmbl9ZMkYwWldkdmNua3RZMmh2YVdObC5qcGc~eC1vc3MtcHJvY2Vzcz1pbWFnZS9yZXNpemUsd18xOTIwLGhfMTkyMC9mb3JtYXQsd2VicC9xdWFsaXR5LHFfODAiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE3OTg3NjE2MDB9fX1dfQ__&Key-Pair-Id=K2HSFNDJXOU9YS&Signature=OTHOfW~fIXQsQO4JHYKwXpN9BrC0qRfnZl~u9VCp0no2wsqC2RTwSdFRk5qJVtbkpersNVeCcXeWis9QRxCl655fjKU0IupQIILVgWFKXiOZ3i9F~GupN3tJYwJTIulFZEOSxAZhPHf-tNId9YE1qtatoI1ohNU4JcWIsczAQqV-lQUz0rZeL6t73TVZYZ6NwdfVz6PJAMlIaAF7S4-iIVLf4xiu-4F3ot9Sbon4noq~Uh533gdrqhPG8jEEeyz1wntl0r9l3c1HFS7HM6z6o4I5J2Q8Ml0BVsgccCy86zxlBtPPRPooG34CrD248HIUH-PCgU25bBXKTqk~HoiAHw__",
 };
 
+// Default thumbnail for articles without a custom image
+export const DEFAULT_THUMBNAIL = "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=800&q=80";
+
 export const DEMO_CATEGORIES: Category[] = [
   {
     id: "cat-1",
@@ -40,66 +43,24 @@ export const DEMO_ARTICLES: Article[] = [
     id: "art-1",
     title: "THW ban religious symbols in public schools",
     slug: "thw-ban-religious-symbols-in-public-schools",
-    content: [
-      {
-        id: "b1",
-        type: "heading",
-        props: { level: 2 },
-        content: [{ type: "text", text: "Motion概要" }],
-      },
-      {
-        id: "b2",
-        type: "paragraph",
-        content: [
-          {
-            type: "text",
-            text: "このMotionは、公立学校における宗教的シンボル（ヒジャブ、十字架、キッパーなど）の着用を禁止すべきかどうかを問うものです。フランスのライシテ（政教分離）原則を背景に、世界各地のディベート大会で頻出するテーマです。",
-          },
-        ],
-      },
-      {
-        id: "b3",
-        type: "heading",
-        props: { level: 2 },
-        content: [{ type: "text", text: "Government側の主要論点" }],
-      },
-      {
-        id: "b4",
-        type: "paragraph",
-        content: [
-          {
-            type: "text",
-            text: "政府側は、公教育の場における宗教的中立性の確保、少数派の生徒に対する同調圧力の排除、そして世俗的な公共空間の維持を主張します。特に、未成年者が自発的な選択として宗教的シンボルを着用しているのか、家庭や共同体からの圧力によるものかを区別することの困難さを強調します。",
-          },
-        ],
-      },
-      {
-        id: "b5",
-        type: "heading",
-        props: { level: 2 },
-        content: [{ type: "text", text: "Opposition側の主要論点" }],
-      },
-      {
-        id: "b6",
-        type: "paragraph",
-        content: [
-          {
-            type: "text",
-            text: "反対側は、信教の自由と表現の自由という基本的人権の侵害を主張します。また、禁止措置が特定の宗教（特にイスラム教）を不均衡に標的にする差別的効果を持つこと、そして禁止が逆に宗教的マイノリティの教育機会を奪う可能性を指摘します。",
-          },
-        ],
-      },
-    ],
-    excerpt:
-      "公立学校における宗教的シンボルの着用禁止を問うMotion。ライシテ原則と信教の自由の対立を分析します。",
+    content: "## Motion概要\n\nこのMotionは、公立学校における宗教的シンボル（ヒジャブ、十字架、キッパーなど）の着用を禁止すべきかどうかを問うものです。フランスのライシテ（政教分離）原則を背景に、世界各地のディベート大会で頻出するテーマです。\n\n## Government側の主要論点\n\n政府側は、公教育の場における宗教的中立性の確保、少数派の生徒に対する同調圧力の排除、そして世俗的な公共空間の維持を主張します。\n\n- 公教育の中立性\n    - 学校は宗教的影響から自由であるべき\n    - 教師・生徒ともに中立的な環境が必要\n- 同調圧力の排除\n    - 宗教的マイノリティへの圧力を軽減\n    - 自由な選択を保障\n\n## Opposition側の主要論点\n\n反対側は、信教の自由と表現の自由という基本的人権の侵害を主張します。\n\n1. 信教の自由の侵害\n2. 特定宗教への差別的効果\n3. 教育機会の喪失リスク",
+    excerpt: "公立学校における宗教的シンボルの着用禁止を問うMotion。ライシテ原則と信教の自由の対立を分析します。",
     thumbnail_url: CATEGORY_IMAGES.religion,
     category_id: "cat-1",
     author_id: "user-1",
+    author_name: "益満・田中",
     status: "published",
     likes_count: 24,
     created_at: "2025-02-15T10:00:00Z",
     updated_at: "2025-02-20T14:30:00Z",
-    category: DEMO_CATEGORIES[0],
+    category: {
+      id: "cat-1",
+      name: "Religion",
+      slug: "religion",
+      description: "宗教・信仰に関するMotion",
+      image_url: CATEGORY_IMAGES.religion,
+      created_at: "2025-01-01T00:00:00Z",
+    },
     author: {
       id: "user-1",
       email: "admin@example.com",
@@ -112,34 +73,24 @@ export const DEMO_ARTICLES: Article[] = [
     id: "art-2",
     title: "THW implement Universal Basic Income",
     slug: "thw-implement-universal-basic-income",
-    content: [
-      {
-        id: "b1",
-        type: "heading",
-        props: { level: 2 },
-        content: [{ type: "text", text: "Motion概要" }],
-      },
-      {
-        id: "b2",
-        type: "paragraph",
-        content: [
-          {
-            type: "text",
-            text: "ユニバーサル・ベーシック・インカム（UBI）は、すべての市民に無条件で一定額の現金を定期的に支給する制度です。このMotionでは、UBIの導入の是非を議論します。",
-          },
-        ],
-      },
-    ],
-    excerpt:
-      "ユニバーサル・ベーシック・インカムの導入を議論するMotion。労働インセンティブと社会保障の再設計を考察します。",
+    content: "## Motion概要\n\nユニバーサル・ベーシック・インカム（UBI）は、すべての市民に無条件で一定額の現金を定期的に支給する制度です。このMotionでは、UBIの導入の是非を議論します。\n\n## 主要論点\n\n- 賛成派の主張\n    - 貧困の根本的解決\n    - 社会保障の簡素化\n        - 既存の複雑な制度を一本化\n        - 行政コストの削減\n- 反対派の主張\n    - 労働インセンティブの低下\n    - 財源の確保が困難",
+    excerpt: "ユニバーサル・ベーシック・インカムの導入を議論するMotion。労働インセンティブと社会保障の再設計を考察します。",
     thumbnail_url: CATEGORY_IMAGES.economy,
     category_id: "cat-2",
     author_id: "user-1",
+    author_name: "益満",
     status: "published",
     likes_count: 18,
     created_at: "2025-02-10T08:00:00Z",
     updated_at: "2025-02-18T11:00:00Z",
-    category: DEMO_CATEGORIES[1],
+    category: {
+      id: "cat-2",
+      name: "Economy",
+      slug: "economy",
+      description: "経済・財政に関するMotion",
+      image_url: CATEGORY_IMAGES.economy,
+      created_at: "2025-01-01T00:00:00Z",
+    },
     author: {
       id: "user-1",
       email: "admin@example.com",
@@ -152,34 +103,24 @@ export const DEMO_ARTICLES: Article[] = [
     id: "art-3",
     title: "THW allow the sale of human organs",
     slug: "thw-allow-the-sale-of-human-organs",
-    content: [
-      {
-        id: "b1",
-        type: "heading",
-        props: { level: 2 },
-        content: [{ type: "text", text: "Motion概要" }],
-      },
-      {
-        id: "b2",
-        type: "paragraph",
-        content: [
-          {
-            type: "text",
-            text: "臓器売買の合法化は、個人の身体的自律性と市場原理の適用範囲を問う根本的な倫理的問題です。臓器不足による死亡者数の増加を背景に、規制された市場の創設を支持する議論が存在します。",
-          },
-        ],
-      },
-    ],
-    excerpt:
-      "臓器売買の合法化を問うMotion。身体的自律性と搾取のリスクの間で揺れる倫理的ジレンマを分析します。",
+    content: "## Motion概要\n\n臓器売買の合法化は、個人の身体的自律性と市場原理の適用範囲を問う根本的な倫理的問題です。\n\n## 論点整理\n\n1. 身体的自律性の観点\n2. 臓器不足の解消\n3. 搾取のリスク\n    - 経済的弱者が標的になる可能性\n    - 途上国での問題",
+    excerpt: "臓器売買の合法化を問うMotion。身体的自律性と搾取のリスクの間で揺れる倫理的ジレンマを分析します。",
     thumbnail_url: CATEGORY_IMAGES.choice,
     category_id: "cat-3",
     author_id: "user-1",
+    author_name: "田中・佐藤",
     status: "published",
     likes_count: 31,
     created_at: "2025-02-05T12:00:00Z",
     updated_at: "2025-02-12T16:00:00Z",
-    category: DEMO_CATEGORIES[2],
+    category: {
+      id: "cat-3",
+      name: "Choice",
+      slug: "choice",
+      description: "個人の選択・自由に関するMotion",
+      image_url: CATEGORY_IMAGES.choice,
+      created_at: "2025-01-01T00:00:00Z",
+    },
     author: {
       id: "user-1",
       email: "admin@example.com",
@@ -192,17 +133,24 @@ export const DEMO_ARTICLES: Article[] = [
     id: "art-4",
     title: "THBT religious organizations should pay taxes",
     slug: "thbt-religious-organizations-should-pay-taxes",
-    content: [],
-    excerpt:
-      "宗教団体への課税の是非を議論するMotion。政教分離と公平な税負担の観点から分析します。",
-    thumbnail_url: CATEGORY_IMAGES.religion,
+    content: "## Motion概要\n\n宗教団体への課税の是非を議論するMotion。政教分離と公平な税負担の観点から分析します。",
+    excerpt: "宗教団体への課税の是非を議論するMotion。政教分離と公平な税負担の観点から分析します。",
+    thumbnail_url: null,
     category_id: "cat-1",
     author_id: "user-1",
+    author_name: "益満",
     status: "published",
     likes_count: 12,
     created_at: "2025-01-28T09:00:00Z",
     updated_at: "2025-02-01T10:00:00Z",
-    category: DEMO_CATEGORIES[0],
+    category: {
+      id: "cat-1",
+      name: "Religion",
+      slug: "religion",
+      description: "宗教・信仰に関するMotion",
+      image_url: CATEGORY_IMAGES.religion,
+      created_at: "2025-01-01T00:00:00Z",
+    },
     author: {
       id: "user-1",
       email: "admin@example.com",
@@ -215,17 +163,24 @@ export const DEMO_ARTICLES: Article[] = [
     id: "art-5",
     title: "THW abolish the minimum wage",
     slug: "thw-abolish-the-minimum-wage",
-    content: [],
-    excerpt:
-      "最低賃金制度の廃止を議論するMotion。労働市場の自由化と労働者保護のバランスを考察します。",
-    thumbnail_url: CATEGORY_IMAGES.economy,
+    content: "## Motion概要\n\n最低賃金制度の廃止を議論するMotion。労働市場の自由化と労働者保護のバランスを考察します。",
+    excerpt: "最低賃金制度の廃止を議論するMotion。労働市場の自由化と労働者保護のバランスを考察します。",
+    thumbnail_url: null,
     category_id: "cat-2",
     author_id: "user-1",
+    author_name: null,
     status: "published",
     likes_count: 9,
     created_at: "2025-01-20T14:00:00Z",
     updated_at: "2025-01-25T08:00:00Z",
-    category: DEMO_CATEGORIES[1],
+    category: {
+      id: "cat-2",
+      name: "Economy",
+      slug: "economy",
+      description: "経済・財政に関するMotion",
+      image_url: CATEGORY_IMAGES.economy,
+      created_at: "2025-01-01T00:00:00Z",
+    },
     author: {
       id: "user-1",
       email: "admin@example.com",
@@ -241,16 +196,14 @@ export const DEMO_COMMENTS: PublicComment[] = [
     id: "com-1",
     article_id: "art-1",
     author_name: "ディベーター太郎",
-    content:
-      "とても分かりやすい解説でした。Gov側の論点整理が特に参考になりました。",
+    content: "とても分かりやすい解説でした。Gov側の論点整理が特に参考になりました。",
     created_at: "2025-02-21T10:00:00Z",
   },
   {
     id: "com-2",
     article_id: "art-1",
     author_name: "初心者ディベーター",
-    content:
-      "フランスのライシテについてもう少し詳しく知りたいです。参考文献はありますか？",
+    content: "フランスのライシテについてもう少し詳しく知りたいです。参考文献はありますか？",
     created_at: "2025-02-22T15:30:00Z",
   },
 ];
