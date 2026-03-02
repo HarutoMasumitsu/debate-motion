@@ -221,4 +221,163 @@
   .prose-article li > ol {
     padding-left: 1.5em;
   }
+
+  /* h1 in article */
+  .prose-article h1 {
+    font-size: 1.875rem;
+    font-weight: 700;
+    margin-top: 3em;
+    margin-bottom: 1em;
+    border-bottom: 2px solid oklch(0.45 0.12 195 / 0.3);
+    padding-bottom: 0.4em;
+  }
+
+  /* details / toggle */
+  .prose-article details,
+  .rich-editor-content details,
+  .tiptap-details {
+    border: 1px solid oklch(0.88 0.01 90);
+    border-radius: 6px;
+    padding: 0.5em 1em;
+    margin-bottom: 1em;
+    background: oklch(0.97 0.005 90);
+  }
+
+  .prose-article details summary,
+  .rich-editor-content details summary,
+  .tiptap-details summary {
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    padding: 0.3em 0;
+    user-select: none;
+  }
+
+  .prose-article details summary::before,
+  .rich-editor-content details summary::before,
+  .tiptap-details summary::before {
+    content: '▶';
+    font-size: 0.65em;
+    transition: transform 0.2s;
+    display: inline-block;
+  }
+
+  .prose-article details[open] summary::before,
+  .rich-editor-content details[open] summary::before,
+  .tiptap-details[open] summary::before {
+    transform: rotate(90deg);
+  }
+
+  .prose-article details > *:not(summary),
+  .rich-editor-content details > *:not(summary),
+  .tiptap-details > *:not(summary) {
+    margin-top: 0.5em;
+    padding-top: 0.5em;
+    border-top: 1px solid oklch(0.90 0.01 90);
+  }
+
+  /* Tiptap WYSIWYG editor styles */
+  .rich-editor-content .tiptap {
+    outline: none;
+    min-height: 400px;
+  }
+
+  .rich-editor-content .tiptap p.is-editor-empty:first-child::before {
+    color: oklch(0.65 0.01 90);
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+
+  .rich-editor-content h1 {
+    font-size: 1.875rem;
+    font-weight: 700;
+    margin-top: 2em;
+    margin-bottom: 0.75em;
+    border-bottom: 2px solid oklch(0.45 0.12 195 / 0.3);
+    padding-bottom: 0.4em;
+  }
+
+  .rich-editor-content h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-top: 1.75em;
+    margin-bottom: 0.5em;
+  }
+
+  .rich-editor-content h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-top: 1.5em;
+    margin-bottom: 0.4em;
+  }
+
+  .rich-editor-content p {
+    margin-bottom: 1em;
+    line-height: 1.85;
+  }
+
+  .rich-editor-content ul {
+    list-style-type: disc;
+    padding-left: 1.5em;
+    margin-bottom: 1em;
+  }
+
+  .rich-editor-content ul ul {
+    list-style-type: circle;
+    margin-top: 0.25em;
+  }
+
+  .rich-editor-content ul ul ul {
+    list-style-type: square;
+  }
+
+  .rich-editor-content ol {
+    list-style-type: decimal;
+    padding-left: 1.5em;
+    margin-bottom: 1em;
+  }
+
+  .rich-editor-content ol ol {
+    list-style-type: lower-alpha;
+    margin-top: 0.25em;
+  }
+
+  .rich-editor-content ol ol ol {
+    list-style-type: lower-roman;
+  }
+
+  .rich-editor-content li {
+    margin-bottom: 0.3em;
+    line-height: 1.7;
+  }
+
+  .rich-editor-content li > ul,
+  .rich-editor-content li > ol {
+    padding-left: 1.5em;
+    margin-top: 0.25em;
+  }
+
+  .rich-editor-content hr {
+    border: none;
+    border-top: 1px solid oklch(0.88 0.01 90);
+    margin: 2em 0;
+  }
+
+  .rich-editor-content a {
+    color: oklch(0.45 0.12 195);
+    text-decoration: underline;
+  }
+
+  .rich-editor-content code {
+    background: oklch(0.93 0.008 90);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    font-size: 0.875em;
+    font-family: ui-monospace, monospace;
+  }
 }
