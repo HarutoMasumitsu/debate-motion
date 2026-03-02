@@ -3,18 +3,27 @@
  * Notionライクなインライン編集エディタ
  * デザイン: Warm Academic — クリーム色ベース、ティールグリーンアクセント
  *
- * アーキテクチャ:
- * - Tiptap を使用したWYSIWYGエディタ
- * - トグル: "> " 入力でdetailsタグを挿入（InputRule）
- * - Tab: リスト内ではネスト、それ以外はインデント
- * - リスト記号: 黒丸→白丸→四角（CSS）
+ * トグル: ReactNodeViewRenderer でカスタムUIを持つブロックノードとして実装
+ * - ">" + スペース で発動
+ * - ▶ アイコンクリックで開閉
+ * - タイトルはインライン編集可能
+ * - 開いているときコンテンツを編集可能
  */
 
-import { useEditor, EditorContent, Extension, InputRule } from "@tiptap/react";
+import React, { useState, useCallback, useEffect } from "react";
+import {
+  useEditor,
+  EditorContent,
+  Extension,
+  Node,
+  NodeViewWrapper,
+  NodeViewContent,
+  ReactNodeViewRenderer,
+  mergeAttributes,
+} from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
-import { useEffect, useCallback, useState } from "react";
 import {
   Bold,
   Italic,
@@ -31,7 +40,155 @@ import {
   Eye,
 } from "lucide-react";
 
-// ===== インデント拡張（Tab/Shift-Tab） =====
+// ===== トグルノードのReactコンポーネント =====
+
+function ToggleNodeView({ node, updateAttributes, editor, getPos }: {
+  node: any;
+  updateAttributes: (attrs: Record<string, any>) => void;
+  editor: any;
+  getPos: () => number;
+}) {
+  const isOpen = node.attrs.open as boolean;
+  const title = node.attrs.title as string;
+
+  const toggleOpen = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    updateAttributes({ open: !isOpen });
+  };
+
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    updateAttributes({ title: e.target.value });
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // Enterでコンテンツエリアにフォーカス移動
+      if (!isOpen) {
+        updateAttributes({ open: true });
+      }
+      // ノードの後ろにカーソルを移動
+      const pos = getPos();
+      if (pos !== undefined) {
+        // コンテンツの最初の段落にフォーカス
+        const nodeSize = node.nodeSize;
+        editor.chain().focus().setTextSelection(pos + 2).run();
+      }
+    }
+  };
+
+  return (
+    <NodeViewWrapper className="toggle-block my-2">
+      {/* タイトル行 */}
+      <div className="toggle-title flex items-center gap-1.5 group">
+        <button
+          type="button"
+          onClick={toggleOpen}
+          className="toggle-arrow flex-shrink-0 w-5 h-5 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-all"
+          style={{ transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s ease" }}
+          contentEditable={false}
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+        <input
+          type="text"
+          value={title}
+          onChange={handleTitleChange}
+          onKeyDown={handleTitleKeyDown}
+          placeholder="トグルのタイトル"
+          className="toggle-title-input flex-1 bg-transparent border-none outline-none font-medium text-foreground placeholder:text-muted-foreground/50 cursor-text"
+          contentEditable={false}
+        />
+      </div>
+
+      {/* コンテンツエリア（開いているときのみ表示） */}
+      {isOpen && (
+        <div className="toggle-content pl-6 mt-1 border-l-2 border-border/50">
+          <NodeViewContent className="toggle-content-inner outline-none" />
+        </div>
+      )}
+    </NodeViewWrapper>
+  );
+}
+
+// ===== トグルノード定義 =====
+
+const ToggleNode = Node.create({
+  name: "toggleBlock",
+  group: "block",
+  content: "block+",
+  defining: true,
+  isolating: true,
+
+  addAttributes() {
+    return {
+      open: {
+        default: true,
+        parseHTML: (el) => el.getAttribute("data-open") === "true",
+        renderHTML: (attrs) => ({ "data-open": attrs.open ? "true" : "false" }),
+      },
+      title: {
+        default: "",
+        parseHTML: (el) => el.getAttribute("data-title") || "",
+        renderHTML: (attrs) => ({ "data-title": attrs.title || "" }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: "div[data-type='toggle-block']" }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, { "data-type": "toggle-block", class: "toggle-block" }),
+      0,
+    ];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(ToggleNodeView);
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      // Enterキーでトグル内の新しい段落を作成
+      Enter: ({ editor }) => {
+        const { state } = editor.view;
+        const { $from } = state.selection;
+        // toggleBlock内にいる場合は通常のEnter動作
+        for (let d = $from.depth; d >= 0; d--) {
+          if ($from.node(d).type.name === "toggleBlock") {
+            return false; // デフォルトのEnter動作に任せる
+          }
+        }
+        return false;
+      },
+    };
+  },
+
+  addInputRules() {
+    return [
+      {
+        find: /^> $/,
+        handler: ({ state, range, chain }) => {
+          chain()
+            .deleteRange(range)
+            .insertContent({
+              type: "toggleBlock",
+              attrs: { open: true, title: "" },
+              content: [{ type: "paragraph" }],
+            })
+            .run();
+        },
+      },
+    ];
+  },
+});
+
+// ===== インデント拡張 =====
 
 const IndentExtension = Extension.create({
   name: "indent",
@@ -147,7 +304,6 @@ function markdownToHtml(md: string): string {
       continue;
     }
 
-    // 見出し
     const h1 = line.match(/^# (.+)$/);
     const h2 = line.match(/^## (.+)$/);
     const h3 = line.match(/^### (.+)$/);
@@ -157,14 +313,13 @@ function markdownToHtml(md: string): string {
     if (h3) { closeAllLists(); output.push(`<h3>${inlineConvert(h3[1])}</h3>`); i++; continue; }
     if (h4) { closeAllLists(); output.push(`<h4>${inlineConvert(h4[1])}</h4>`); i++; continue; }
 
-    // 水平線
     if (line.match(/^---+$/)) {
       closeAllLists();
       output.push("<hr>");
       i++; continue;
     }
 
-    // トグル（> タイトル → details）
+    // トグル（> タイトル → toggleBlock）
     const toggleMatch = line.match(/^> (.+)$/);
     if (toggleMatch) {
       closeAllLists();
@@ -179,12 +334,11 @@ function markdownToHtml(md: string): string {
         ? contentLines.map((l) => `<p>${inlineConvert(l)}</p>`).join("")
         : "<p></p>";
       output.push(
-        `<details open class="tiptap-details"><summary>${inlineConvert(summaryText)}</summary>${innerHtml}</details>`
+        `<div data-type="toggle-block" data-open="true" data-title="${summaryText.replace(/"/g, "&quot;")}">${innerHtml}</div>`
       );
       continue;
     }
 
-    // リスト
     const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
     if (listMatch) {
       const indent = Math.floor(listMatch[1].replace(/\t/g, "    ").length / 4);
@@ -207,7 +361,6 @@ function markdownToHtml(md: string): string {
       i++; continue;
     }
 
-    // インデント付き段落
     const indentMatch = line.match(/^(\s+)(.+)$/);
     if (indentMatch) {
       closeAllLists();
@@ -218,7 +371,6 @@ function markdownToHtml(md: string): string {
       i++; continue;
     }
 
-    // 通常段落
     closeAllLists();
     output.push(`<p>${inlineConvert(line)}</p>`);
     i++;
@@ -245,6 +397,20 @@ function htmlToMarkdown(html: string): string {
     const indentLevel = marginLeft ? Math.round(parseInt(marginLeft) / 32) : 0;
     const indentStr = "    ".repeat(indentLevel);
 
+    // toggleBlock
+    if (tag === "div" && el.getAttribute("data-type") === "toggle-block") {
+      const title = el.getAttribute("data-title") || "";
+      const contentNodes = Array.from(el.childNodes);
+      const contentLines = contentNodes
+        .map((c) => {
+          if (c instanceof Element) return (c.textContent || "").trim();
+          return (c.textContent || "").trim();
+        })
+        .filter(Boolean);
+      const indentedContent = contentLines.map((l) => `    ${l}`).join("\n");
+      return `> ${title}\n${indentedContent}\n\n`;
+    }
+
     switch (tag) {
       case "h1": return `# ${children}\n\n`;
       case "h2": return `## ${children}\n\n`;
@@ -259,35 +425,15 @@ function htmlToMarkdown(html: string): string {
       case "a": return `[${children}](${el.getAttribute("href") || ""})`;
       case "hr": return `---\n\n`;
       case "br": return "\n";
-      case "details": {
-        const summary = el.querySelector(":scope > summary");
-        const summaryText = summary ? (summary.textContent || "").trim() : "";
-        const contentNodes = Array.from(el.childNodes).filter(
-          (c) => !(c instanceof Element && c.tagName.toLowerCase() === "summary")
-        );
-        const contentLines = contentNodes
-          .map((c) => {
-            if (c instanceof Element) {
-              return (c.textContent || "").trim();
-            }
-            return (c.textContent || "").trim();
-          })
-          .filter(Boolean);
-        const indentedContent = contentLines.map((l) => `    ${l}`).join("\n");
-        return `> ${summaryText}\n${indentedContent}\n\n`;
-      }
-      case "summary": return "";
       case "ul": {
         const prefix = "    ".repeat(listIndent);
         const items = Array.from(el.querySelectorAll(":scope > li")).map((li) => {
-          const liEl = li as HTMLElement;
-          const subList = liEl.querySelector("ul, ol");
+          const subList = (li as HTMLElement).querySelector("ul, ol");
           const subMd = subList ? nodeToMd(subList, listIndent + 1) : "";
           const liText = Array.from(li.childNodes)
             .filter((c) => !(c instanceof Element && (c.tagName === "UL" || c.tagName === "OL")))
             .map((c) => nodeToMd(c, listIndent))
-            .join("")
-            .trim();
+            .join("").trim();
           return `${prefix}- ${liText}\n${subMd}`;
         });
         return items.join("") + "\n";
@@ -295,14 +441,12 @@ function htmlToMarkdown(html: string): string {
       case "ol": {
         const prefix = "    ".repeat(listIndent);
         const items = Array.from(el.querySelectorAll(":scope > li")).map((li, idx) => {
-          const liEl = li as HTMLElement;
-          const subList = liEl.querySelector("ul, ol");
+          const subList = (li as HTMLElement).querySelector("ul, ol");
           const subMd = subList ? nodeToMd(subList, listIndent + 1) : "";
           const liText = Array.from(li.childNodes)
             .filter((c) => !(c instanceof Element && (c.tagName === "UL" || c.tagName === "OL")))
             .map((c) => nodeToMd(c, listIndent))
-            .join("")
-            .trim();
+            .join("").trim();
           return `${prefix}${idx + 1}. ${liText}\n${subMd}`;
         });
         return items.join("") + "\n";
@@ -319,14 +463,14 @@ function htmlToMarkdown(html: string): string {
 
 // ===== ツールバーボタン =====
 
-interface ToolbarButtonProps {
+function ToolbarButton({
+  onClick, active, title, children,
+}: {
   onClick: () => void;
   active?: boolean;
   title: string;
   children: React.ReactNode;
-}
-
-function ToolbarButton({ onClick, active, title, children }: ToolbarButtonProps) {
+}) {
   return (
     <button
       type="button"
@@ -355,15 +499,13 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
   const [mode, setMode] = useState<"wysiwyg" | "markdown">("wysiwyg");
   const [initialized, setInitialized] = useState(false);
 
-  const TOGGLE_HTML = `<details open class="tiptap-details"><summary>タイトルを入力</summary><p>内容を入力</p></details>`;
-
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3, 4] },
         bulletList: {},
         orderedList: {},
-        blockquote: false, // 引用は無効（トグルに置き換え）
+        blockquote: false,
         bold: {},
         italic: {},
         code: {},
@@ -377,11 +519,11 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
         openOnClick: false,
         HTMLAttributes: { class: "text-primary underline hover:text-primary/80 cursor-pointer" },
       }),
+      ToggleNode,
       IndentExtension,
     ],
     content: markdownToHtml(value),
     onUpdate({ editor }) {
-      // detailsタグのopen/close状態をHTMLから読み取る
       const html = editor.getHTML();
       const md = htmlToMarkdown(html);
       onChange(md);
@@ -390,65 +532,8 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
       attributes: {
         class: "outline-none min-h-[400px] leading-relaxed",
       },
-      handleKeyDown(view, event) {
-        // ">" + スペースでトグルに変換
-        if (event.key === " ") {
-          const { state } = view;
-          const { $from } = state.selection;
-          const nodeText = $from.parent.textContent;
-          if (nodeText === ">") {
-            event.preventDefault();
-            // 現在の段落を削除してトグルを挿入
-            const from = $from.start();
-            const to = $from.end();
-            view.dispatch(state.tr.delete(from, to));
-            // insertContent でトグルHTMLを挿入
-            setTimeout(() => {
-              editor?.chain().focus().insertContent(TOGGLE_HTML).run();
-            }, 0);
-            return true;
-          }
-        }
-        return false;
-      },
     },
   });
-
-  // detailsタグのクリックイベントをエディタDOM上で処理
-  useEffect(() => {
-    if (!editor) return;
-
-    const handleClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      // summary要素のクリック
-      if (target.tagName === "SUMMARY" || target.closest("summary")) {
-        const summary = target.tagName === "SUMMARY" ? target : target.closest("summary")!;
-        const details = summary.closest("details");
-        if (!details) return;
-
-        // summaryのアイコン領域（左24px）のクリックでトグル
-        const rect = summary.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        if (clickX < 28) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (details.hasAttribute("open")) {
-            details.removeAttribute("open");
-          } else {
-            details.setAttribute("open", "");
-          }
-          // Tiptapのコンテンツを同期
-          const html = editor.getHTML();
-          const md = htmlToMarkdown(html);
-          onChange(md);
-        }
-      }
-    };
-
-    const editorEl = editor.view.dom;
-    editorEl.addEventListener("click", handleClick);
-    return () => editorEl.removeEventListener("click", handleClick);
-  }, [editor, onChange]);
 
   useEffect(() => {
     if (!editor || initialized) return;
@@ -478,7 +563,11 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
 
   const insertToggle = useCallback(() => {
     if (!editor) return;
-    editor.chain().focus().insertContent(TOGGLE_HTML).run();
+    editor.chain().focus().insertContent({
+      type: "toggleBlock",
+      attrs: { open: true, title: "トグルのタイトル" },
+      content: [{ type: "paragraph" }],
+    }).run();
   }, [editor]);
 
   if (!editor) return null;
@@ -582,7 +671,6 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
           <button
             type="button"
             onClick={() => handleModeSwitch("wysiwyg")}
-            title="見たまま編集"
             className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
               mode === "wysiwyg" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
@@ -593,7 +681,6 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
           <button
             type="button"
             onClick={() => handleModeSwitch("markdown")}
-            title="Markdown編集"
             className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
               mode === "markdown" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
