@@ -2,15 +2,18 @@
  * RichEditor.tsx
  * Notionライクなインライン編集エディタ
  * デザイン: Warm Academic — クリーム色ベース、ティールグリーンアクセント
+ *
+ * アーキテクチャ:
+ * - Tiptap を使用したWYSIWYGエディタ
+ * - トグル: "> " 入力でdetailsタグを挿入（InputRule）
+ * - Tab: リスト内ではネスト、それ以外はインデント
+ * - リスト記号: 黒丸→白丸→四角（CSS）
  */
 
-import { useEditor, EditorContent, Extension } from "@tiptap/react";
+import { useEditor, EditorContent, Extension, InputRule } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
-import Details from "@tiptap/extension-details";
-import DetailsSummary from "@tiptap/extension-details-summary";
-import DetailsContent from "@tiptap/extension-details-content";
 import { useEffect, useCallback, useState } from "react";
 import {
   Bold,
@@ -20,7 +23,7 @@ import {
   Heading3,
   List,
   ListOrdered,
-  ChevronDown,
+  ChevronRight,
   Code,
   Link as LinkIcon,
   Minus,
@@ -28,7 +31,7 @@ import {
   Eye,
 } from "lucide-react";
 
-// ===== インデント拡張 =====
+// ===== インデント拡張（Tab/Shift-Tab） =====
 
 const IndentExtension = Extension.create({
   name: "indent",
@@ -45,8 +48,9 @@ const IndentExtension = Extension.create({
               return Math.round(parseInt(val) / 32);
             },
             renderHTML: (attrs: Record<string, unknown>) => {
-              if (!attrs.indent || attrs.indent === 0) return {};
-              return { style: `margin-left: ${(attrs.indent as number) * 32}px` };
+              const level = (attrs.indent as number) || 0;
+              if (level === 0) return {};
+              return { style: `margin-left: ${level * 32}px` };
             },
           },
         },
@@ -57,14 +61,17 @@ const IndentExtension = Extension.create({
     return {
       Tab: () => {
         const { state, dispatch } = this.editor.view;
-        const { selection } = state;
-        const { $from } = selection;
-        const node = $from.node();
+        const { $from } = state.selection;
 
-        if (node.type.name === "listItem") {
-          return this.editor.commands.sinkListItem("listItem");
+        // リストアイテム内ならネストを深くする
+        for (let d = $from.depth; d >= 0; d--) {
+          if ($from.node(d).type.name === "listItem") {
+            return this.editor.commands.sinkListItem("listItem");
+          }
         }
 
+        // それ以外はインデントを増やす
+        const node = $from.node();
         const attrs = node.attrs;
         const currentIndent = (attrs.indent as number) || 0;
         const tr = state.tr.setNodeMarkup($from.before(), undefined, {
@@ -76,14 +83,15 @@ const IndentExtension = Extension.create({
       },
       "Shift-Tab": () => {
         const { state, dispatch } = this.editor.view;
-        const { selection } = state;
-        const { $from } = selection;
-        const node = $from.node();
+        const { $from } = state.selection;
 
-        if (node.type.name === "listItem") {
-          return this.editor.commands.liftListItem("listItem");
+        for (let d = $from.depth; d >= 0; d--) {
+          if ($from.node(d).type.name === "listItem") {
+            return this.editor.commands.liftListItem("listItem");
+          }
         }
 
+        const node = $from.node();
         const attrs = node.attrs;
         const currentIndent = (attrs.indent as number) || 0;
         if (currentIndent <= 0) return false;
@@ -156,10 +164,11 @@ function markdownToHtml(md: string): string {
       i++; continue;
     }
 
-    // トグル（> で始まる行 → details）
-    if (line.match(/^>\s+.+$/) && !line.match(/^>>\s/)) {
+    // トグル（> タイトル → details）
+    const toggleMatch = line.match(/^> (.+)$/);
+    if (toggleMatch) {
       closeAllLists();
-      const summaryText = line.replace(/^>\s+/, "");
+      const summaryText = toggleMatch[1];
       const contentLines: string[] = [];
       i++;
       while (i < lines.length && (lines[i].startsWith("    ") || lines[i].startsWith("\t"))) {
@@ -169,7 +178,9 @@ function markdownToHtml(md: string): string {
       const innerHtml = contentLines.length > 0
         ? contentLines.map((l) => `<p>${inlineConvert(l)}</p>`).join("")
         : "<p></p>";
-      output.push(`<details><summary>${inlineConvert(summaryText)}</summary>${innerHtml}</details>`);
+      output.push(
+        `<details open class="tiptap-details"><summary>${inlineConvert(summaryText)}</summary>${innerHtml}</details>`
+      );
       continue;
     }
 
@@ -249,11 +260,20 @@ function htmlToMarkdown(html: string): string {
       case "hr": return `---\n\n`;
       case "br": return "\n";
       case "details": {
-        const summary = el.querySelector("summary");
-        const summaryText = summary ? (summary.textContent || "") : "";
-        const contentEls = Array.from(el.children).filter((c) => c.tagName.toLowerCase() !== "summary");
-        const contentText = contentEls.map((c) => (c.textContent || "").trim()).filter(Boolean).join("\n");
-        const indentedContent = contentText ? `    ${contentText}` : "";
+        const summary = el.querySelector(":scope > summary");
+        const summaryText = summary ? (summary.textContent || "").trim() : "";
+        const contentNodes = Array.from(el.childNodes).filter(
+          (c) => !(c instanceof Element && c.tagName.toLowerCase() === "summary")
+        );
+        const contentLines = contentNodes
+          .map((c) => {
+            if (c instanceof Element) {
+              return (c.textContent || "").trim();
+            }
+            return (c.textContent || "").trim();
+          })
+          .filter(Boolean);
+        const indentedContent = contentLines.map((l) => `    ${l}`).join("\n");
         return `> ${summaryText}\n${indentedContent}\n\n`;
       }
       case "summary": return "";
@@ -335,13 +355,15 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
   const [mode, setMode] = useState<"wysiwyg" | "markdown">("wysiwyg");
   const [initialized, setInitialized] = useState(false);
 
+  const TOGGLE_HTML = `<details open class="tiptap-details"><summary>タイトルを入力</summary><p>内容を入力</p></details>`;
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3, 4] },
         bulletList: {},
         orderedList: {},
-        blockquote: false,
+        blockquote: false, // 引用は無効（トグルに置き換え）
         bold: {},
         italic: {},
         code: {},
@@ -349,21 +371,17 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
         horizontalRule: {},
       }),
       Placeholder.configure({
-        placeholder: placeholder || "本文を入力...",
+        placeholder: placeholder || "本文を入力...\n「> 」でトグル、「- 」でリスト、「## 」で見出し",
       }),
       Link.configure({
         openOnClick: false,
         HTMLAttributes: { class: "text-primary underline hover:text-primary/80 cursor-pointer" },
       }),
-      Details.configure({
-        HTMLAttributes: { class: "tiptap-details" },
-      }),
-      DetailsSummary,
-      DetailsContent,
       IndentExtension,
     ],
     content: markdownToHtml(value),
     onUpdate({ editor }) {
+      // detailsタグのopen/close状態をHTMLから読み取る
       const html = editor.getHTML();
       const md = htmlToMarkdown(html);
       onChange(md);
@@ -372,8 +390,65 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
       attributes: {
         class: "outline-none min-h-[400px] leading-relaxed",
       },
+      handleKeyDown(view, event) {
+        // ">" + スペースでトグルに変換
+        if (event.key === " ") {
+          const { state } = view;
+          const { $from } = state.selection;
+          const nodeText = $from.parent.textContent;
+          if (nodeText === ">") {
+            event.preventDefault();
+            // 現在の段落を削除してトグルを挿入
+            const from = $from.start();
+            const to = $from.end();
+            view.dispatch(state.tr.delete(from, to));
+            // insertContent でトグルHTMLを挿入
+            setTimeout(() => {
+              editor?.chain().focus().insertContent(TOGGLE_HTML).run();
+            }, 0);
+            return true;
+          }
+        }
+        return false;
+      },
     },
   });
+
+  // detailsタグのクリックイベントをエディタDOM上で処理
+  useEffect(() => {
+    if (!editor) return;
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // summary要素のクリック
+      if (target.tagName === "SUMMARY" || target.closest("summary")) {
+        const summary = target.tagName === "SUMMARY" ? target : target.closest("summary")!;
+        const details = summary.closest("details");
+        if (!details) return;
+
+        // summaryのアイコン領域（左24px）のクリックでトグル
+        const rect = summary.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        if (clickX < 28) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (details.hasAttribute("open")) {
+            details.removeAttribute("open");
+          } else {
+            details.setAttribute("open", "");
+          }
+          // Tiptapのコンテンツを同期
+          const html = editor.getHTML();
+          const md = htmlToMarkdown(html);
+          onChange(md);
+        }
+      }
+    };
+
+    const editorEl = editor.view.dom;
+    editorEl.addEventListener("click", handleClick);
+    return () => editorEl.removeEventListener("click", handleClick);
+  }, [editor, onChange]);
 
   useEffect(() => {
     if (!editor || initialized) return;
@@ -403,13 +478,7 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
 
   const insertToggle = useCallback(() => {
     if (!editor) return;
-    editor.chain().focus().insertContent({
-      type: "details",
-      content: [
-        { type: "detailsSummary", content: [{ type: "text", text: "タイトルを入力" }] },
-        { type: "detailsContent", content: [{ type: "paragraph", content: [{ type: "text", text: "内容を入力" }] }] },
-      ],
-    }).run();
+    editor.chain().focus().insertContent(TOGGLE_HTML).run();
   }, [editor]);
 
   if (!editor) return null;
@@ -491,10 +560,10 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
             </ToolbarButton>
             <ToolbarButton
               onClick={insertToggle}
-              active={editor.isActive("details")}
-              title="トグル（折りたたみ）"
+              active={false}
+              title="トグル（折りたたみ）— または「> 」と入力"
             >
-              <ChevronDown className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" />
             </ToolbarButton>
             <ToolbarButton
               onClick={() => editor.chain().focus().setHorizontalRule().run()}
@@ -537,14 +606,14 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
 
       {/* Editor */}
       {mode === "wysiwyg" ? (
-        <div className="px-6 md:px-10 py-6 prose-article rich-editor-content">
+        <div className="px-6 md:px-10 py-6 rich-editor-content">
           <EditorContent editor={editor} />
         </div>
       ) : (
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={"# 見出し1\n## 見出し2\n\n本文を入力...\n\n- リスト項目\n    - ネスト項目\n\n> トグルタイトル\n    トグル内容\n\n**太字** *斜体*"}
+          placeholder={"# 見出し1\n## 見出し2\n\n本文を入力...\n\n- リスト項目\n    - ネスト項目（Tab）\n\n> トグルタイトル\n    トグル内容（4スペースインデント）\n\n**太字** *斜体*"}
           className="w-full min-h-[500px] px-6 py-5 text-sm leading-relaxed bg-card font-mono resize-y focus:outline-none placeholder:text-muted-foreground/30"
           style={{ tabSize: 4 }}
           onKeyDown={(e) => {
