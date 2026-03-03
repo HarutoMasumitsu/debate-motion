@@ -1,15 +1,15 @@
 /**
  * RichEditor.tsx
- * Notionライクなインライン編集エディタ
+ * Notionライクなインライン編集エディタ（HTML保存方式）
  *
- * 【重要な設計方針】
- * - RichEditor内部でMarkdown文字列を独自stateとして管理する
- * - 親コンポーネントとの同期は onChangeRef.current(md) で行う
- * - 親から渡される value は初期値としてのみ使用し、以降は内部stateが真実の情報源
- * - これにより、親のsetState → useEffect → setContent の無限ループを完全に防ぐ
+ * 【設計方針】
+ * - TiptapのHTMLをそのまま保存・読み込みする
+ * - Markdown↔HTML変換は一切行わない
+ * - value/onChangeはHTML文字列をやり取りする
+ * - トグルはdetails/summaryタグで保存され、公開ページでもネイティブに開閉可能
  */
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useRef } from "react";
 import {
   useEditor,
   EditorContent,
@@ -36,11 +36,9 @@ import {
   Code,
   Link as LinkIcon,
   Minus,
-  FileCode,
-  Eye,
 } from "lucide-react";
 
-// ===== トグルノードのReactコンポーネント =====
+// ===== トグルノードのReactコンポーネント（エディタ内表示用） =====
 
 function ToggleNodeView({ node, updateAttributes, editor, getPos }: {
   node: any;
@@ -106,6 +104,8 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: {
 }
 
 // ===== トグルノード定義 =====
+// エディタ内ではReact NodeViewで表示
+// renderHTMLでは<details><summary>タグを出力（公開ページ用）
 
 const ToggleNode = Node.create({
   name: "toggleBlock",
@@ -118,26 +118,49 @@ const ToggleNode = Node.create({
     return {
       open: {
         default: true,
-        parseHTML: (el) => el.getAttribute("data-open") === "true",
-        renderHTML: (attrs) => ({ "data-open": attrs.open ? "true" : "false" }),
+        parseHTML: (el) => {
+          // <details>タグからの読み込み
+          if (el.tagName === "DETAILS") {
+            return el.hasAttribute("open");
+          }
+          return el.getAttribute("data-open") === "true";
+        },
+        renderHTML: (attrs) => ({}), // renderHTMLで直接制御するので空
       },
       title: {
         default: "",
-        parseHTML: (el) => el.getAttribute("data-title") || "",
-        renderHTML: (attrs) => ({ "data-title": attrs.title || "" }),
+        parseHTML: (el) => {
+          // <details>タグの<summary>からタイトルを取得
+          if (el.tagName === "DETAILS") {
+            const summary = el.querySelector("summary");
+            return summary?.textContent || "";
+          }
+          return el.getAttribute("data-title") || "";
+        },
+        renderHTML: (attrs) => ({}), // renderHTMLで直接制御するので空
       },
     };
   },
 
   parseHTML() {
-    return [{ tag: "div[data-type='toggle-block']" }];
+    return [
+      { tag: "details" },
+      { tag: "div[data-type='toggle-block']" },
+    ];
   },
 
-  renderHTML({ HTMLAttributes }) {
+  renderHTML({ node, HTMLAttributes }) {
+    // <details><summary>タイトル</summary>コンテンツ</details> として出力
+    const title = node.attrs.title || "";
+    const isOpen = node.attrs.open;
     return [
-      "div",
-      mergeAttributes(HTMLAttributes, { "data-type": "toggle-block", class: "toggle-block" }),
-      0,
+      "details",
+      mergeAttributes(HTMLAttributes, {
+        class: "toggle-details",
+        ...(isOpen ? { open: "true" } : {}),
+      }),
+      ["summary", { class: "toggle-summary" }, title],
+      ["div", { class: "toggle-content-inner" }, 0],
     ];
   },
 
@@ -211,12 +234,14 @@ const IndentExtension = Extension.create({
         const { state, dispatch } = this.editor.view;
         const { $from } = state.selection;
 
+        // リストアイテム内ならネストを深くする
         for (let d = $from.depth; d >= 0; d--) {
           if ($from.node(d).type.name === "listItem") {
             return this.editor.commands.sinkListItem("listItem");
           }
         }
 
+        // それ以外はインデントを増やす
         const node = $from.node();
         const attrs = node.attrs;
         const currentIndent = (attrs.indent as number) || 0;
@@ -252,204 +277,6 @@ const IndentExtension = Extension.create({
   },
 });
 
-// ===== Markdown ↔ HTML 変換 =====
-
-function markdownToHtml(md: string): string {
-  if (!md) return "<p></p>";
-
-  const lines = md.split("\n");
-  const output: string[] = [];
-  let i = 0;
-  let listStack: { type: "ul" | "ol"; indent: number }[] = [];
-
-  const closeListsTo = (targetIndent: number) => {
-    while (listStack.length > 0 && listStack[listStack.length - 1].indent > targetIndent) {
-      const top = listStack.pop()!;
-      output.push(`</${top.type}>`);
-    }
-  };
-
-  const closeAllLists = () => {
-    while (listStack.length > 0) {
-      const top = listStack.pop()!;
-      output.push(`</${top.type}>`);
-    }
-  };
-
-  const inlineConvert = (text: string): string => {
-    return text
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<em>$1</em>")
-      .replace(/`([^`]+)`/g, "<code>$1</code>")
-      .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
-  };
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    if (line.trim() === "") {
-      closeAllLists();
-      i++;
-      continue;
-    }
-
-    const h1 = line.match(/^# (.+)$/);
-    const h2 = line.match(/^## (.+)$/);
-    const h3 = line.match(/^### (.+)$/);
-    const h4 = line.match(/^#### (.+)$/);
-    if (h1) { closeAllLists(); output.push(`<h1>${inlineConvert(h1[1])}</h1>`); i++; continue; }
-    if (h2) { closeAllLists(); output.push(`<h2>${inlineConvert(h2[1])}</h2>`); i++; continue; }
-    if (h3) { closeAllLists(); output.push(`<h3>${inlineConvert(h3[1])}</h3>`); i++; continue; }
-    if (h4) { closeAllLists(); output.push(`<h4>${inlineConvert(h4[1])}</h4>`); i++; continue; }
-
-    if (line.match(/^---+$/)) {
-      closeAllLists();
-      output.push("<hr>");
-      i++; continue;
-    }
-
-    // トグル
-    const toggleMatch = line.match(/^> (.+)$/);
-    if (toggleMatch) {
-      closeAllLists();
-      const summaryText = toggleMatch[1];
-      const contentLines: string[] = [];
-      i++;
-      while (i < lines.length && (lines[i].startsWith("    ") || lines[i].startsWith("\t"))) {
-        contentLines.push(lines[i].replace(/^    /, "").replace(/^\t/, ""));
-        i++;
-      }
-      const innerHtml = contentLines.length > 0
-        ? contentLines.map((l) => `<p>${inlineConvert(l)}</p>`).join("")
-        : "<p></p>";
-      output.push(
-        `<div data-type="toggle-block" data-open="true" data-title="${summaryText.replace(/"/g, "&quot;")}">${innerHtml}</div>`
-      );
-      continue;
-    }
-
-    const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
-    if (listMatch) {
-      const indent = Math.floor(listMatch[1].replace(/\t/g, "    ").length / 4);
-      const isOrdered = /^\d+\./.test(listMatch[2]);
-      const content = inlineConvert(listMatch[3]);
-      const listType = isOrdered ? "ol" : "ul";
-
-      if (listStack.length === 0 || indent > listStack[listStack.length - 1].indent) {
-        output.push(`<${listType}>`);
-        listStack.push({ type: listType, indent });
-      } else if (indent < listStack[listStack.length - 1].indent) {
-        closeListsTo(indent);
-        if (listStack.length === 0 || listStack[listStack.length - 1].indent !== indent) {
-          output.push(`<${listType}>`);
-          listStack.push({ type: listType, indent });
-        }
-      }
-
-      output.push(`<li>${content}</li>`);
-      i++; continue;
-    }
-
-    const indentMatch = line.match(/^(\s+)(.+)$/);
-    if (indentMatch) {
-      closeAllLists();
-      const spaces = indentMatch[1].replace(/\t/g, "    ").length;
-      const indentLevel = Math.floor(spaces / 4);
-      const marginStyle = indentLevel > 0 ? ` style="margin-left:${indentLevel * 32}px"` : "";
-      output.push(`<p${marginStyle}>${inlineConvert(indentMatch[2])}</p>`);
-      i++; continue;
-    }
-
-    closeAllLists();
-    output.push(`<p>${inlineConvert(line)}</p>`);
-    i++;
-  }
-
-  closeAllLists();
-  return output.join("\n") || "<p></p>";
-}
-
-function htmlToMarkdown(html: string): string {
-  if (!html) return "";
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-
-  function processNode(node: globalThis.Node, listIndent = 0): string {
-    if (node.nodeType === globalThis.Node.TEXT_NODE) return node.textContent || "";
-    if (node.nodeType !== globalThis.Node.ELEMENT_NODE) return "";
-
-    const el = node as HTMLElement;
-    const tag = el.tagName.toLowerCase();
-    const childrenText = Array.from(el.childNodes).map((c) => processNode(c, listIndent)).join("");
-
-    const marginLeft = el.style?.marginLeft;
-    const indentLevel = marginLeft ? Math.round(parseInt(marginLeft) / 32) : 0;
-    const indentStr = "    ".repeat(indentLevel);
-
-    // toggleBlock
-    if (tag === "div" && el.getAttribute("data-type") === "toggle-block") {
-      const title = el.getAttribute("data-title") || "";
-      const contentNodes = Array.from(el.childNodes);
-      const contentLines = contentNodes
-        .map((c) => {
-          if (c instanceof Element) return (c.textContent || "").trim();
-          return (c.textContent || "").trim();
-        })
-        .filter(Boolean);
-      const indentedContent = contentLines.map((l) => `    ${l}`).join("\n");
-      return `> ${title}\n${indentedContent}\n\n`;
-    }
-
-    switch (tag) {
-      case "h1": return `# ${childrenText}\n\n`;
-      case "h2": return `## ${childrenText}\n\n`;
-      case "h3": return `### ${childrenText}\n\n`;
-      case "h4": return `#### ${childrenText}\n\n`;
-      case "h5": return `##### ${childrenText}\n\n`;
-      case "h6": return `###### ${childrenText}\n\n`;
-      case "p": return `${indentStr}${childrenText}\n\n`;
-      case "strong": case "b": return `**${childrenText}**`;
-      case "em": case "i": return `*${childrenText}*`;
-      case "code": return `\`${childrenText}\``;
-      case "a": return `[${childrenText}](${el.getAttribute("href") || ""})`;
-      case "hr": return `---\n\n`;
-      case "br": return "\n";
-      case "ul": {
-        const prefix = "    ".repeat(listIndent);
-        const items = Array.from(el.querySelectorAll(":scope > li")).map((li) => {
-          const subList = (li as HTMLElement).querySelector("ul, ol");
-          const subMd = subList ? processNode(subList, listIndent + 1) : "";
-          const liText = Array.from(li.childNodes)
-            .filter((c) => !(c instanceof Element && (c.tagName === "UL" || c.tagName === "OL")))
-            .map((c) => processNode(c, listIndent))
-            .join("").trim();
-          return `${prefix}- ${liText}\n${subMd}`;
-        });
-        return items.join("") + "\n";
-      }
-      case "ol": {
-        const prefix = "    ".repeat(listIndent);
-        const items = Array.from(el.querySelectorAll(":scope > li")).map((li, idx) => {
-          const subList = (li as HTMLElement).querySelector("ul, ol");
-          const subMd = subList ? processNode(subList, listIndent + 1) : "";
-          const liText = Array.from(li.childNodes)
-            .filter((c) => !(c instanceof Element && (c.tagName === "UL" || c.tagName === "OL")))
-            .map((c) => processNode(c, listIndent))
-            .join("").trim();
-          return `${prefix}${idx + 1}. ${liText}\n${subMd}`;
-        });
-        return items.join("") + "\n";
-      }
-      case "li": return childrenText;
-      case "body": case "div": return childrenText;
-      default: return childrenText;
-    }
-  }
-
-  const result = processNode(doc.body);
-  return result.replace(/\n{3,}/g, "\n\n").trim();
-}
-
 // ===== ツールバーボタン =====
 
 function ToolbarButton({
@@ -480,39 +307,15 @@ function ToolbarButton({
 
 interface RichEditorProps {
   value: string;
-  onChange: (markdown: string) => void;
+  onChange: (html: string) => void;
   placeholder?: string;
 }
 
 export default function RichEditor({ value, onChange, placeholder }: RichEditorProps) {
-  const [mode, setMode] = useState<"wysiwyg" | "markdown">("wysiwyg");
-
-  // 内部Markdown state — これが真実の情報源
-  // 親のvalueは初期値としてのみ使用する
-  const [internalMd, setInternalMd] = useState(value);
-
-  // onChangeをrefに保持して、Tiptap onUpdate内で最新のonChangeを呼べるようにする
+  // onChangeをrefに保持してTiptap onUpdate内で最新のonChangeを呼べるようにする
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  // 親からvalueが変わった場合（記事ロード完了時）に内部stateを同期する
-  // ただし、初回レンダリング後のユーザー入力による変化は無視する
-  const isFirstLoad = useRef(true);
-  const prevExternalValue = useRef(value);
-
-  useEffect(() => {
-    // 親のvalueが変わった場合のみ（記事ロード完了時など）
-    if (prevExternalValue.current !== value) {
-      prevExternalValue.current = value;
-      // 初回ロードまたは大幅な変化（記事切り替え）のみ反映
-      if (isFirstLoad.current || Math.abs(value.length - internalMd.length) > 50) {
-        setInternalMd(value);
-        isFirstLoad.current = false;
-      }
-    }
-  }, [value]); // internalMdを依存配列に入れない
-
-  // Tiptapエディタ
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -536,12 +339,10 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
       ToggleNode,
       IndentExtension,
     ],
-    content: markdownToHtml(value),
+    content: value || "<p></p>",
     onUpdate({ editor }) {
       const html = editor.getHTML();
-      const md = htmlToMarkdown(html);
-      setInternalMd(md);
-      onChangeRef.current(md);
+      onChangeRef.current(html);
     },
     editorProps: {
       attributes: {
@@ -550,39 +351,30 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
     },
   });
 
-  // internalMdが外部ロードで変わった場合のみエディタを更新
-  const editorSyncRef = useRef(value);
-  useEffect(() => {
+  // 外部からvalueが大きく変わった場合（記事ロード完了時）のみエディタを更新
+  const prevValueRef = useRef(value);
+  const isInternalUpdate = useRef(false);
+
+  React.useEffect(() => {
     if (!editor) return;
-    if (editorSyncRef.current === internalMd) return;
-    // 内部stateが変わったのがユーザー入力ではなく外部ロードの場合のみ
-    // 判定: prevExternalValueが変わっている = 外部ロード
-    if (prevExternalValue.current === internalMd) {
-      editorSyncRef.current = internalMd;
-      if (mode === "wysiwyg") {
-        editor.commands.setContent(markdownToHtml(internalMd));
-      }
+    if (isInternalUpdate.current) {
+      isInternalUpdate.current = false;
+      return;
     }
-  }, [editor, internalMd, mode]);
+    if (prevValueRef.current !== value) {
+      prevValueRef.current = value;
+      editor.commands.setContent(value || "<p></p>");
+    }
+  }, [editor, value]);
 
-  // Markdownモードでの入力
-  const handleMarkdownChange = useCallback((newMd: string) => {
-    setInternalMd(newMd);
-    onChangeRef.current(newMd);
-  }, []);
-
-  const handleModeSwitch = (newMode: "wysiwyg" | "markdown") => {
-    if (newMode === "wysiwyg" && mode === "markdown" && editor) {
-      editor.commands.setContent(markdownToHtml(internalMd));
-    }
-    if (newMode === "markdown" && mode === "wysiwyg" && editor) {
-      // WYSIWYGからMarkdownに切り替え時、最新のHTMLからMarkdownを生成
-      const html = editor.getHTML();
-      const md = htmlToMarkdown(html);
-      setInternalMd(md);
-    }
-    setMode(newMode);
-  };
+  // onUpdateでisInternalUpdateフラグを立てる
+  React.useEffect(() => {
+    if (!editor) return;
+    const originalOnUpdate = editor.options.onUpdate;
+    editor.on("update", () => {
+      isInternalUpdate.current = true;
+    });
+  }, [editor]);
 
   const setLink = useCallback(() => {
     if (!editor) return;
@@ -610,149 +402,95 @@ export default function RichEditor({ value, onChange, placeholder }: RichEditorP
     <div className="border border-border rounded-lg overflow-hidden bg-card">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 px-3 py-2 border-b border-border bg-secondary/20 sticky top-14 z-10">
-        {mode === "wysiwyg" ? (
-          <>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-              active={editor.isActive("heading", { level: 1 })}
-              title="見出し1 (#)"
-            >
-              <Heading1 className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-              active={editor.isActive("heading", { level: 2 })}
-              title="見出し2 (##)"
-            >
-              <Heading2 className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-              active={editor.isActive("heading", { level: 3 })}
-              title="見出し3 (###)"
-            >
-              <Heading3 className="h-4 w-4" />
-            </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+          active={editor.isActive("heading", { level: 1 })}
+          title="見出し1 (#)"
+        >
+          <Heading1 className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+          active={editor.isActive("heading", { level: 2 })}
+          title="見出し2 (##)"
+        >
+          <Heading2 className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+          active={editor.isActive("heading", { level: 3 })}
+          title="見出し3 (###)"
+        >
+          <Heading3 className="h-4 w-4" />
+        </ToolbarButton>
 
-            <div className="w-px h-5 bg-border mx-1" />
+        <div className="w-px h-5 bg-border mx-1" />
 
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleBold().run()}
-              active={editor.isActive("bold")}
-              title="太字 (Ctrl+B)"
-            >
-              <Bold className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleItalic().run()}
-              active={editor.isActive("italic")}
-              title="斜体 (Ctrl+I)"
-            >
-              <Italic className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleCode().run()}
-              active={editor.isActive("code")}
-              title="インラインコード"
-            >
-              <Code className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={setLink}
-              active={editor.isActive("link")}
-              title="リンク"
-            >
-              <LinkIcon className="h-4 w-4" />
-            </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleBold().run()}
+          active={editor.isActive("bold")}
+          title="太字 (Ctrl+B)"
+        >
+          <Bold className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+          active={editor.isActive("italic")}
+          title="斜体 (Ctrl+I)"
+        >
+          <Italic className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleCode().run()}
+          active={editor.isActive("code")}
+          title="インラインコード"
+        >
+          <Code className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={setLink}
+          active={editor.isActive("link")}
+          title="リンク"
+        >
+          <LinkIcon className="h-4 w-4" />
+        </ToolbarButton>
 
-            <div className="w-px h-5 bg-border mx-1" />
+        <div className="w-px h-5 bg-border mx-1" />
 
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleBulletList().run()}
-              active={editor.isActive("bulletList")}
-              title="箇条書き"
-            >
-              <List className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().toggleOrderedList().run()}
-              active={editor.isActive("orderedList")}
-              title="番号付きリスト"
-            >
-              <ListOrdered className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={insertToggle}
-              active={false}
-              title="トグル（折りたたみ）— または「> 」と入力"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={() => editor.chain().focus().setHorizontalRule().run()}
-              active={false}
-              title="区切り線"
-            >
-              <Minus className="h-4 w-4" />
-            </ToolbarButton>
-          </>
-        ) : (
-          <span className="text-xs text-muted-foreground px-1">Markdown編集モード — Tab = 4スペース</span>
-        )}
-
-        {/* モード切り替え */}
-        <div className="ml-auto flex items-center gap-0.5 bg-secondary rounded-md p-0.5">
-          <button
-            type="button"
-            onClick={() => handleModeSwitch("wysiwyg")}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-              mode === "wysiwyg" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Eye className="h-3 w-3" />
-            見たまま
-          </button>
-          <button
-            type="button"
-            onClick={() => handleModeSwitch("markdown")}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-              mode === "markdown" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <FileCode className="h-3 w-3" />
-            Markdown
-          </button>
-        </div>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          active={editor.isActive("bulletList")}
+          title="箇条書き"
+        >
+          <List className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          active={editor.isActive("orderedList")}
+          title="番号付きリスト"
+        >
+          <ListOrdered className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={insertToggle}
+          active={false}
+          title="トグル（折りたたみ）— または「> 」と入力"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setHorizontalRule().run()}
+          active={false}
+          title="区切り線"
+        >
+          <Minus className="h-4 w-4" />
+        </ToolbarButton>
       </div>
 
       {/* Editor */}
-      {mode === "wysiwyg" ? (
-        <div className="px-6 md:px-10 py-6 rich-editor-content">
-          <EditorContent editor={editor} />
-        </div>
-      ) : (
-        <textarea
-          value={internalMd}
-          onChange={(e) => handleMarkdownChange(e.target.value)}
-          placeholder={"# 見出し1\n## 見出し2\n\n本文を入力...\n\n- リスト項目\n    - ネスト項目（Tab）\n\n> トグルタイトル\n    トグル内容（4スペースインデント）\n\n**太字** *斜体*"}
-          className="w-full min-h-[500px] px-6 py-5 text-sm leading-relaxed bg-card font-mono resize-y focus:outline-none placeholder:text-muted-foreground/30"
-          style={{ tabSize: 4 }}
-          onKeyDown={(e) => {
-            if (e.key === "Tab") {
-              e.preventDefault();
-              const target = e.currentTarget;
-              const start = target.selectionStart;
-              const end = target.selectionEnd;
-              const newValue = internalMd.substring(0, start) + "    " + internalMd.substring(end);
-              handleMarkdownChange(newValue);
-              requestAnimationFrame(() => {
-                target.selectionStart = start + 4;
-                target.selectionEnd = start + 4;
-              });
-            }
-          }}
-        />
-      )}
+      <div className="px-6 md:px-10 py-6 rich-editor-content">
+        <EditorContent editor={editor} />
+      </div>
     </div>
   );
 }

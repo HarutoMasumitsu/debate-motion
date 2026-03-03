@@ -18,7 +18,21 @@ import { DEFAULT_THUMBNAIL } from "@/lib/demo-data";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
-// ===== Markdown Renderer with proper nested list support =====
+// ===== HTML Content Renderer =====
+
+// HTMLコンテンツをそのまま表示するコンポーネント
+// Tiptapが出力したHTMLをそのまま表示する
+function HtmlContent({ content }: { content: string }) {
+  if (!content) return null;
+  return (
+    <div
+      className="prose-article"
+      dangerouslySetInnerHTML={{ __html: content }}
+    />
+  );
+}
+
+// ===== Legacy Markdown Renderer (既存Markdown記事用) =====
 
 interface MarkdownNode {
   type: string;
@@ -29,35 +43,19 @@ interface MarkdownNode {
   start?: number;
 }
 
-function parseMarkdown(text: string): MarkdownNode[] {
+function parseMarkdownLegacy(text: string): MarkdownNode[] {
   if (!text || typeof text !== "string") return [];
-
   const lines = text.split("\n");
   const nodes: MarkdownNode[] = [];
   let i = 0;
-
   while (i < lines.length) {
     const line = lines[i];
-
-    // Empty line
-    if (line.trim() === "") {
-      i++;
-      continue;
-    }
-
-    // Heading
+    if (line.trim() === "") { i++; continue; }
     const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
     if (headingMatch) {
-      nodes.push({
-        type: "heading",
-        level: headingMatch[1].length,
-        content: headingMatch[2],
-      });
-      i++;
-      continue;
+      nodes.push({ type: "heading", level: headingMatch[1].length, content: headingMatch[2] });
+      i++; continue;
     }
-
-    // Blockquote
     if (line.trim().startsWith("> ")) {
       let quoteContent = "";
       while (i < lines.length && lines[i].trim().startsWith("> ")) {
@@ -67,124 +65,63 @@ function parseMarkdown(text: string): MarkdownNode[] {
       nodes.push({ type: "blockquote", content: quoteContent.trim() });
       continue;
     }
-
-    // List (unordered or ordered) - collect all consecutive list lines
     const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
     if (listMatch) {
-      const listNode = parseListBlock(lines, i);
+      const listNode = parseListBlockLegacy(lines, i);
       nodes.push(listNode.node);
       i = listNode.nextIndex;
       continue;
     }
-
-    // Regular paragraph - collect until empty line or special block
     let paragraphContent = line;
     i++;
     while (i < lines.length) {
       const nextLine = lines[i];
-      if (
-        nextLine.trim() === "" ||
-        nextLine.match(/^#{1,6}\s/) ||
-        nextLine.match(/^\s*([-*+]|\d+\.)\s/) ||
-        nextLine.trim().startsWith("> ")
-      ) {
-        break;
-      }
+      if (nextLine.trim() === "" || nextLine.match(/^#{1,6}\s/) || nextLine.match(/^\s*([-*+]|\d+\.)\s/) || nextLine.trim().startsWith("> ")) break;
       paragraphContent += " " + nextLine;
       i++;
     }
     nodes.push({ type: "paragraph", content: paragraphContent });
   }
-
   return nodes;
 }
 
-function parseListBlock(
-  lines: string[],
-  startIndex: number
-): { node: MarkdownNode; nextIndex: number } {
-  // Determine if the first item is ordered or unordered
+function parseListBlockLegacy(lines: string[], startIndex: number): { node: MarkdownNode; nextIndex: number } {
   const firstLine = lines[startIndex];
   const firstMatch = firstLine.match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
-  if (!firstMatch) {
-    return { node: { type: "paragraph", content: firstLine }, nextIndex: startIndex + 1 };
-  }
-
+  if (!firstMatch) return { node: { type: "paragraph", content: firstLine }, nextIndex: startIndex + 1 };
   const baseIndent = firstMatch[1].length;
   const isOrdered = /^\d+\./.test(firstMatch[2]);
-
   const items: MarkdownNode[] = [];
   let i = startIndex;
-
   while (i < lines.length) {
     const line = lines[i];
     const match = line.match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
-
-    if (!match) {
-      // Not a list line - check if it's a continuation or end
-      if (line.trim() === "") {
-        // Check if next line continues the list
-        if (i + 1 < lines.length && lines[i + 1].match(/^(\s*)([-*+]|\d+\.)\s/)) {
-          i++;
-          continue;
-        }
-        break;
-      }
-      break;
-    }
-
+    if (!match) { if (line.trim() === "" && i + 1 < lines.length && lines[i + 1].match(/^(\s*)([-*+]|\d+\.)\s/)) { i++; continue; } break; }
     const indent = match[1].length;
-
-    if (indent < baseIndent) {
-      // This belongs to a parent list
-      break;
-    }
-
-    if (indent === baseIndent) {
-      // Same level item
-      items.push({ type: "listItem", content: match[3] });
-      i++;
-    } else {
-      // Deeper indent - this is a sub-list, parse recursively
-      const subList = parseListBlock(lines, i);
-      // Attach sub-list to the last item
-      if (items.length > 0) {
-        if (!items[items.length - 1].children) {
-          items[items.length - 1].children = [];
-        }
-        items[items.length - 1].children!.push(subList.node);
-      }
-      i = subList.nextIndex;
-    }
+    if (indent < baseIndent) break;
+    if (indent === baseIndent) { items.push({ type: "listItem", content: match[3] }); i++; }
+    else { const subList = parseListBlockLegacy(lines, i); if (items.length > 0) { if (!items[items.length - 1].children) items[items.length - 1].children = []; items[items.length - 1].children!.push(subList.node); } i = subList.nextIndex; }
   }
-
-  return {
-    node: {
-      type: "list",
-      ordered: isOrdered,
-      start: isOrdered ? parseInt(firstMatch[2]) : undefined,
-      children: items,
-    },
-    nextIndex: i,
-  };
+  return { node: { type: "list", ordered: isOrdered, start: isOrdered ? parseInt(firstMatch[2]) : undefined, children: items }, nextIndex: i };
 }
 
+function LegacyMarkdownContent({ content }: { content: string }) {
+  const nodes = parseMarkdownLegacy(content);
+  return <div className="prose-article">{nodes.map((node: MarkdownNode, i: number) => renderNode(node, i))}</div>;
+}
+
+// Legacy: renderInlineMarkdown は既存のMarkdown記事との互換性のために残す
 function renderInlineMarkdown(text: string): React.ReactNode {
   if (!text) return null;
 
-  // Process inline formatting: bold, italic, inline code, links
   const parts: React.ReactNode[] = [];
   let remaining = text;
   let key = 0;
 
   while (remaining.length > 0) {
-    // Bold
     const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
-    // Italic
     const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/);
-    // Inline code
-    const codeMatch = remaining.match(/`(.+?)`/);
-    // Link
+    const codeMatch = remaining.match(/`([^`]+)`/);
     const linkMatch = remaining.match(/\[(.+?)\]\((.+?)\)/);
 
     // Find earliest match
@@ -245,11 +182,7 @@ function renderInlineMarkdown(text: string): React.ReactNode {
   return <>{parts}</>;
 }
 
-function MarkdownContent({ content }: { content: string }) {
-  const nodes = parseMarkdown(content);
 
-  return <div className="prose-article">{nodes.map((node, i) => renderNode(node, i))}</div>;
-}
 
 function renderNode(node: MarkdownNode, key: number): React.ReactNode {
   switch (node.type) {
@@ -467,7 +400,11 @@ export default function ArticleDetailPage() {
 
               {/* Article content */}
               {typeof article.content === "string" ? (
-                <MarkdownContent content={article.content} />
+                article.content.startsWith("<") ? (
+                  <HtmlContent content={article.content} />
+                ) : (
+                  <LegacyMarkdownContent content={article.content} />
+                )
               ) : Array.isArray(article.content) ? (
                 <div className="prose-article">
                   <p className="text-muted-foreground">コンテンツの表示に対応していない形式です。</p>
