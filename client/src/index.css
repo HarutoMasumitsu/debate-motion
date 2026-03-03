@@ -232,51 +232,57 @@
     padding-bottom: 0.4em;
   }
 
-  /* details / toggle */
-  .prose-article details,
-  .rich-editor-content details,
-  .tiptap-details {
-    border: 1px solid oklch(0.88 0.01 90);
-    border-radius: 6px;
-    padding: 0.5em 1em;
-    margin-bottom: 1em;
-    background: oklch(0.97 0.005 90);
+  /* details / toggle - 公開ページでは透明ブロック、地の文と同じ見た目 */
+  .prose-article details {
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    margin-bottom: 0.5em;
+    background: transparent;
   }
 
-  .prose-article details summary,
-  .rich-editor-content details summary,
-  .tiptap-details summary {
+  .prose-article details summary {
     cursor: pointer;
-    font-weight: 600;
+    font-weight: normal;
     list-style: none;
     display: flex;
     align-items: center;
     gap: 0.4em;
-    padding: 0.3em 0;
+    padding: 0.1em 0;
     user-select: none;
+    font-size: inherit;
+    line-height: inherit;
   }
 
-  .prose-article details summary::before,
-  .rich-editor-content details summary::before,
-  .tiptap-details summary::before {
+  /* ブラウザデフォルトの三角印を非表示 */
+  .prose-article details summary::-webkit-details-marker { display: none; }
+  .prose-article details summary::marker { display: none; }
+
+  .prose-article details summary::before {
     content: '▶';
-    font-size: 0.65em;
-    transition: transform 0.2s;
+    font-size: 0.6em;
+    transition: transform 0.15s;
     display: inline-block;
+    color: oklch(0.55 0.01 90);
+    flex-shrink: 0;
   }
 
-  .prose-article details[open] summary::before,
-  .rich-editor-content details[open] summary::before,
-  .tiptap-details[open] summary::before {
+  .prose-article details[open] summary::before {
     transform: rotate(90deg);
   }
 
-  .prose-article details > *:not(summary),
-  .rich-editor-content details > *:not(summary),
-  .tiptap-details > *:not(summary) {
-    margin-top: 0.5em;
-    padding-top: 0.5em;
-    border-top: 1px solid oklch(0.90 0.01 90);
+  .prose-article details > *:not(summary) {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    padding-left: 1.25em;
+  }
+
+  /* 編集画面のトグルスタイル（変更なし） */
+  .rich-editor-content details {
+    border: none;
+    background: transparent;
+    padding: 0;
   }
 
   /* Tiptap WYSIWYG editor styles */

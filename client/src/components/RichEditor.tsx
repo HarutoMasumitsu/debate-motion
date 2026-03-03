@@ -234,22 +234,29 @@ const IndentExtension = Extension.create({
         const { state, dispatch } = this.editor.view;
         const { $from } = state.selection;
 
-        // リストアイテム内ならネストを深くする
+        // リストアイテム内ならネストを深くする（親リストがある場合のみ）
         for (let d = $from.depth; d >= 0; d--) {
           if ($from.node(d).type.name === "listItem") {
-            return this.editor.commands.sinkListItem("listItem");
+            // sinkListItemを試みる。失敗してもtrueを返してデフォルト動作を防ぐ
+            const result = this.editor.commands.sinkListItem("listItem");
+            return true; // 必ずtrueを返してブラウザのTab動作を防ぐ
           }
         }
 
-        // それ以外はインデントを増やす
+        // paragraph/heading ならインデントを増やす
         const node = $from.node();
-        const attrs = node.attrs;
-        const currentIndent = (attrs.indent as number) || 0;
-        const tr = state.tr.setNodeMarkup($from.before(), undefined, {
-          ...attrs,
-          indent: currentIndent + 1,
-        });
-        dispatch(tr);
+        if (node.type.name === "paragraph" || node.type.name === "heading") {
+          const attrs = node.attrs;
+          const currentIndent = (attrs.indent as number) || 0;
+          const tr = state.tr.setNodeMarkup($from.before(), undefined, {
+            ...attrs,
+            indent: currentIndent + 1,
+          });
+          dispatch(tr);
+          return true;
+        }
+
+        // その他のノード（toggleBlock内など）でもデフォルト動作を防ぐ
         return true;
       },
       "Shift-Tab": () => {
@@ -258,20 +265,25 @@ const IndentExtension = Extension.create({
 
         for (let d = $from.depth; d >= 0; d--) {
           if ($from.node(d).type.name === "listItem") {
-            return this.editor.commands.liftListItem("listItem");
+            this.editor.commands.liftListItem("listItem");
+            return true; // 必ずtrueを返してブラウザのShift-Tab動作を防ぐ
           }
         }
 
         const node = $from.node();
-        const attrs = node.attrs;
-        const currentIndent = (attrs.indent as number) || 0;
-        if (currentIndent <= 0) return false;
-        const tr = state.tr.setNodeMarkup($from.before(), undefined, {
-          ...attrs,
-          indent: currentIndent - 1,
-        });
-        dispatch(tr);
-        return true;
+        if (node.type.name === "paragraph" || node.type.name === "heading") {
+          const attrs = node.attrs;
+          const currentIndent = (attrs.indent as number) || 0;
+          if (currentIndent <= 0) return true; // 0以下でも画面移動を防ぐ
+          const tr = state.tr.setNodeMarkup($from.before(), undefined, {
+            ...attrs,
+            indent: currentIndent - 1,
+          });
+          dispatch(tr);
+          return true;
+        }
+
+        return true; // その他でもデフォルト動作を防ぐ
       },
     };
   },
