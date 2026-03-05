@@ -51,12 +51,12 @@ export default function Home() {
             className="max-w-2xl"
           >
             <h1 className="font-serif text-3xl md:text-4xl lg:text-5xl font-bold text-white leading-tight mb-4">
-              近代ディベート
+              現代ディベート
               <br />
               <span className="text-amber-300">Motion</span>解説
             </h1>
             <p className="text-base md:text-lg text-gray-200 leading-relaxed mb-6 max-w-lg">
-              ディベートのMotion（論題）を深く理解するための解説プラットフォーム。
+              ディベートのMotionを深く理解するための解説プラットフォーム。
               各テーマの背景知識から論点整理まで、体系的に学べます。
             </p>
 
