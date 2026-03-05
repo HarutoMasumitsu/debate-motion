@@ -25,7 +25,7 @@ export default function Header() {
               <span className="text-primary-foreground font-bold text-sm font-sans">M</span>
             </div>
             <span className="font-serif text-lg font-semibold text-foreground hidden sm:block">
-              近代ディベートMotion解説
+              現代ディベートMotion解説
             </span>
             <span className="font-serif text-lg font-semibold text-foreground sm:hidden">
               Motion解説
