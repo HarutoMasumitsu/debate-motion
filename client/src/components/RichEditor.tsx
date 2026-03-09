@@ -36,15 +36,17 @@ import {
   Code,
   Link as LinkIcon,
   Minus,
+  X,
 } from "lucide-react";
 
 // ===== トグルノードのReactコンポーネント（エディタ内表示用） =====
 
-function ToggleNodeView({ node, updateAttributes, editor, getPos }: {
+function ToggleNodeView({ node, updateAttributes, editor, getPos, deleteNode }: {
   node: any;
   updateAttributes: (attrs: Record<string, any>) => void;
   editor: any;
   getPos: () => number | undefined;
+  deleteNode: () => void;
 }) {
   const isOpen = node.attrs.open as boolean;
   const title = node.attrs.title as string;
@@ -53,6 +55,12 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: {
     e.preventDefault();
     e.stopPropagation();
     updateAttributes({ open: !isOpen });
+  };
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    deleteNode();
   };
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -93,6 +101,15 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: {
           className="toggle-title-input flex-1 bg-transparent border-none outline-none font-medium text-foreground placeholder:text-muted-foreground/50 cursor-text"
           contentEditable={false}
         />
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 rounded transition-all opacity-0 group-hover:opacity-100"
+          contentEditable={false}
+          title="トグルを削除"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
       {isOpen && (
         <div className="toggle-content pl-6 mt-1 border-l-2 border-border/50">
